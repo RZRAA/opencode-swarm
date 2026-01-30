@@ -3,7 +3,10 @@ import { type SMEDomainConfig, createSMEAgent } from './base';
 
 // Import all SME configurations
 import { activeDirectorySMEConfig } from './active-directory';
+import { apiSMEConfig } from './api';
 import { azureSMEConfig } from './azure';
+import { databaseSMEConfig } from './database';
+import { devopsSMEConfig } from './devops';
 import { linuxSMEConfig } from './linux';
 import { networkSMEConfig } from './network';
 import { oracleSMEConfig } from './oracle';
@@ -12,6 +15,7 @@ import { pythonSMEConfig } from './python';
 import { securitySMEConfig } from './security';
 import { uiUxSMEConfig } from './ui-ux';
 import { vmwareSMEConfig } from './vmware';
+import { webSMEConfig } from './web';
 import { windowsSMEConfig } from './windows';
 
 // Map of domain name to SME configuration
@@ -27,6 +31,10 @@ export const SME_CONFIGS: Record<string, SMEDomainConfig> = {
 	azure: azureSMEConfig,
 	active_directory: activeDirectorySMEConfig,
 	ui_ux: uiUxSMEConfig,
+	web: webSMEConfig,
+	database: databaseSMEConfig,
+	devops: devopsSMEConfig,
+	api: apiSMEConfig,
 };
 
 // Map of agent name to domain
@@ -42,6 +50,10 @@ export const AGENT_TO_DOMAIN: Record<string, string> = {
 	sme_azure: 'azure',
 	sme_active_directory: 'active_directory',
 	sme_ui_ux: 'ui_ux',
+	sme_web: 'web',
+	sme_database: 'database',
+	sme_devops: 'devops',
+	sme_api: 'api',
 };
 
 /**

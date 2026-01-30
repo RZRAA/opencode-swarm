@@ -1,9 +1,9 @@
-export declare const SME_AGENTS: readonly ["sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux"];
+export declare const SME_AGENTS: readonly ["sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux", "sme_web", "sme_database", "sme_devops", "sme_api"];
 export declare const QA_AGENTS: readonly ["security_reviewer", "auditor"];
 export declare const PIPELINE_AGENTS: readonly ["explorer", "coder", "test_engineer"];
 export declare const ORCHESTRATOR_NAME: "architect";
-export declare const ALL_SUBAGENT_NAMES: readonly ["sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux", "security_reviewer", "auditor", "explorer", "coder", "test_engineer"];
-export declare const ALL_AGENT_NAMES: readonly ["architect", "sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux", "security_reviewer", "auditor", "explorer", "coder", "test_engineer"];
+export declare const ALL_SUBAGENT_NAMES: readonly ["sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux", "sme_web", "sme_database", "sme_devops", "sme_api", "security_reviewer", "auditor", "explorer", "coder", "test_engineer"];
+export declare const ALL_AGENT_NAMES: readonly ["architect", "sme_windows", "sme_powershell", "sme_python", "sme_oracle", "sme_network", "sme_security", "sme_linux", "sme_vmware", "sme_azure", "sme_active_directory", "sme_ui_ux", "sme_web", "sme_database", "sme_devops", "sme_api", "security_reviewer", "auditor", "explorer", "coder", "test_engineer"];
 export type SMEAgentName = (typeof SME_AGENTS)[number];
 export type QAAgentName = (typeof QA_AGENTS)[number];
 export type PipelineAgentName = (typeof PIPELINE_AGENTS)[number];

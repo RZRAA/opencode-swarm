@@ -11,6 +11,10 @@ export const SME_AGENTS = [
 	'sme_azure',
 	'sme_active_directory',
 	'sme_ui_ux',
+	'sme_web',
+	'sme_database',
+	'sme_devops',
+	'sme_api',
 ] as const;
 
 export const QA_AGENTS = ['security_reviewer', 'auditor'] as const;

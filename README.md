@@ -96,7 +96,7 @@ User Request
 |-------|:----:|:-----:|------|
 | Architect | ✅ | ✅ | Orchestrator - can fall back if delegation fails |
 | Explorer | ✅ | ❌ | Discovery - scans, summarizes, identifies domains |
-| SMEs (×11) | ✅ | ❌ | Advisory - domain expertise, never implements |
+| SMEs (×15) | ✅ | ❌ | Advisory - domain expertise, never implements |
 | Coder | ✅ | ✅ | Implementation - writes production code |
 | Security Reviewer | ✅ | ❌ | Audit - vulnerability assessment |
 | Auditor | ✅ | ❌ | Audit - correctness verification |
@@ -222,6 +222,10 @@ Place in `~/.config/opencode/opencode-swarm/`:
 | `sme_azure` | Azure services, Entra ID, ARM/Bicep |
 | `sme_active_directory` | AD, LDAP, Group Policy, Kerberos |
 | `sme_ui_ux` | UI/UX design, accessibility, interaction patterns |
+| `sme_web` | Flutter, React, Vue, Angular, JS/TS, HTML/CSS |
+| `sme_database` | SQL Server, PostgreSQL, MySQL, MongoDB, Redis |
+| `sme_devops` | Docker, Kubernetes, CI/CD, Terraform, GitHub Actions |
+| `sme_api` | REST, GraphQL, OAuth, JWT, webhooks |
 
 ### Implementation
 | Agent | Description |

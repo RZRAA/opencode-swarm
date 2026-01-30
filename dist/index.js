@@ -22,7 +22,11 @@ var SME_AGENTS = [
   "sme_vmware",
   "sme_azure",
   "sme_active_directory",
-  "sme_ui_ux"
+  "sme_ui_ux",
+  "sme_web",
+  "sme_database",
+  "sme_devops",
+  "sme_api"
 ];
 var QA_AGENTS = ["security_reviewer", "auditor"];
 var PIPELINE_AGENTS = ["explorer", "coder", "test_engineer"];
@@ -13846,6 +13850,13 @@ var ARCHITECT_PROMPT = `You are Architect - an AI coding orchestrator that coord
 
 **Role**: Analyze requests, delegate discovery to Explorer, consult domain SMEs, delegate implementation, and manage QA review.
 
+**CRITICAL RULE: SERIAL EXECUTION ONLY**
+You MUST call agents ONE AT A TIME. After each delegation:
+1. Send to ONE agent
+2. STOP and wait for response
+3. Only then proceed to next agent
+NEVER delegate to multiple agents in the same message. This is mandatory.
+
 **Agents**:
 
 @explorer - Fast codebase discovery and summarization (ALWAYS FIRST for code tasks)
@@ -13860,6 +13871,10 @@ var ARCHITECT_PROMPT = `You are Architect - an AI coding orchestrator that coord
 @sme_azure - Azure cloud services, Entra ID, ARM/Bicep
 @sme_active_directory - Active Directory, LDAP, Group Policy, Kerberos
 @sme_ui_ux - UI/UX design, interaction patterns, accessibility
+@sme_web - Web/frontend (Flutter, React, Vue, Angular, JS/TS, HTML/CSS)
+@sme_database - Databases (SQL Server, PostgreSQL, MySQL, MongoDB, Redis)
+@sme_devops - DevOps, CI/CD, Docker, Kubernetes, Terraform, GitHub Actions
+@sme_api - API design, REST, GraphQL, OAuth, JWT, webhooks
 
 @coder - Implementation specialist, writes production code
 @security_reviewer - Security audit, vulnerability assessment
@@ -13870,47 +13885,51 @@ var ARCHITECT_PROMPT = `You are Architect - an AI coding orchestrator that coord
 
 ## 1. Parse Request (you do this briefly)
 Understand what the user wants. Determine task type:
-- Code review/analysis \u2192 Explorer + SMEs + Collate
-- New implementation \u2192 Explorer + SMEs + Coder + QA + Test
-- Bug fix \u2192 Explorer + SMEs + Coder + QA
-- Question about codebase \u2192 Explorer + answer
+- Code review/analysis \u2192 Explorer \u2192 SMEs (serial) \u2192 Collate
+- New implementation \u2192 Explorer \u2192 SMEs (serial) \u2192 Coder \u2192 QA (serial) \u2192 Test
+- Bug fix \u2192 Explorer \u2192 SMEs (serial) \u2192 Coder \u2192 QA (serial)
+- Question about codebase \u2192 Explorer \u2192 answer
 
-## 2. Explorer FIRST (delegate immediately for any code task)
+## 2. Explorer FIRST (one delegation, wait for response)
 "Delegating to @explorer for codebase analysis..."
-@explorer scans the codebase and returns:
-- Project summary (languages, frameworks, structure)
-- Key files identified
-- Relevant domains for SME consultation
-- Files flagged for deeper review
+STOP HERE. Wait for @explorer response before proceeding.
 
-## 3. SME Consultation (based on @explorer findings)
-From @explorer's "Relevant Domains" list, delegate to appropriate SMEs:
-- Usually 1-3 SMEs, not all 11
-- Serial execution (one at a time)
-- SMEs review the files flagged by @explorer
+## 3. SME Consultation (ONE AT A TIME, wait between each)
+From @explorer's "Relevant Domains" list:
+- Delegate to first SME, WAIT for response
+- Then delegate to second SME, WAIT for response
+- Then delegate to third SME (if needed), WAIT for response
+- Usually 1-3 SMEs total, NEVER call them in parallel
+
+Example of CORRECT serial SME calls:
+  Turn 1: "Consulting @sme_powershell..." \u2192 wait
+  Turn 2: (after response) "Consulting @sme_security..." \u2192 wait
+  Turn 3: (after response) "Consulting @sme_windows..." \u2192 wait
+
+Example of WRONG parallel calls (NEVER DO THIS):
+  "Consulting @sme_powershell, @sme_security, and @sme_windows..." \u2190 WRONG
 
 ## 4. Collate (you do this)
-Synthesize @explorer summary + SME inputs into:
+After ALL SME responses received, synthesize into:
 - For reviews: final findings report
 - For implementation: unified specification for @coder
 
-## 5. Code (delegate to @coder) - if implementation needed
-Send specification to @coder with file paths from @explorer.
+## 5. Code (one delegation to @coder, wait for response)
 
-## 6. QA Review (delegate serially) - if code was written
-@security_reviewer first, then @auditor.
+## 6. QA Review (serial: @security_reviewer first, wait, then @auditor)
 
 ## 7. Triage (you do this)
 APPROVED \u2192 @test_engineer | REVISION_NEEDED \u2192 @coder | BLOCKED \u2192 explain
 
-## 8. Test (delegate to @test_engineer) - if approved
+## 8. Test (one delegation to @test_engineer)
 
 **DELEGATION RULES**:
-- @explorer is ALWAYS your first delegation for tasks involving code
-- Wait for each agent response before calling the next
-- Only consult SMEs for domains identified by @explorer
+- ONE agent per turn. Wait for response. Then next agent.
+- @explorer is ALWAYS first for code tasks
+- SMEs are called serially based on @explorer's domain detection
+- QA agents are called serially: security_reviewer \u2192 auditor
 - Brief notices: "Delegating to @explorer..." not lengthy explanations
-- If an agent fails or gives poor output, you can handle it yourself
+- If an agent fails, you can handle it yourself
 
 **COMMUNICATION**:
 - Be direct, no preamble or flattery
@@ -14353,6 +14372,30 @@ var activeDirectorySMEConfig = {
 - Group Policy preferences vs policies`
 };
 
+// src/agents/sme/api.ts
+var apiSMEConfig = {
+  domain: "api",
+  description: "API design, REST, GraphQL, authentication, and backend integration patterns",
+  guidance: `For API tasks, provide:
+- **REST**: Resource naming, HTTP methods (GET/POST/PUT/PATCH/DELETE), status codes, HATEOAS, versioning strategies
+- **GraphQL**: Schema design, resolvers, mutations, subscriptions, N+1 prevention, Apollo/Relay patterns
+- **gRPC**: Protocol buffer definitions, streaming types, service implementation
+- **WebSockets**: Connection lifecycle, Socket.io, SignalR, heartbeat patterns
+- **OpenAPI/Swagger**: Specification authoring, code generation, documentation hosting
+- **OAuth 2.0**: Authorization code flow, client credentials, PKCE for public clients, token refresh
+- **OpenID Connect**: ID tokens, userinfo endpoint, discovery document
+- **JWT**: Token structure, signing algorithms, claims design, refresh token rotation
+- API key management and rate limiting
+- RBAC/ABAC authorization patterns
+- Pagination strategies (cursor, offset, keyset)
+- Error response formats (RFC 7807 Problem Details)
+- Request validation and sanitization
+- CORS configuration
+- API gateway patterns (Kong, AWS API Gateway, Azure APIM)
+- Webhook design (signatures, retry logic, idempotency keys)
+- Common gotchas (token expiration, CORS preflight, rate limit handling)`
+};
+
 // src/agents/sme/azure.ts
 var azureSMEConfig = {
   domain: "azure",
@@ -14374,6 +14417,49 @@ var azureSMEConfig = {
 - Azure Key Vault integration patterns
 - Cost management considerations
 - Azure Government differences if applicable`
+};
+
+// src/agents/sme/database.ts
+var databaseSMEConfig = {
+  domain: "database",
+  description: "Database design, SQL, and data management (SQL Server, PostgreSQL, MySQL, MongoDB, Redis)",
+  guidance: `For database tasks, provide:
+- **SQL Server**: T-SQL syntax, stored procedures, CTEs, window functions, SSMS usage, Always On availability
+- **PostgreSQL**: PL/pgSQL, extensions (pgvector, PostGIS), JSONB operations, full-text search, partitioning
+- **MySQL/MariaDB**: InnoDB specifics, replication setup, MySQL Workbench, character set handling
+- **SQLite**: Embedded usage, WAL mode, mobile/desktop considerations, size limits
+- **MongoDB**: Document modeling, aggregation pipeline, indexing strategies, Atlas features
+- **Redis**: Data structures (strings, hashes, lists, sets, sorted sets), caching patterns, pub/sub, Lua scripting
+- Database design principles (normalization, denormalization tradeoffs)
+- Index design and query optimization (execution plans, covering indexes)
+- Transaction isolation levels and locking behavior
+- Connection pooling and management
+- Migration strategies and schema versioning
+- ORM patterns (Entity Framework, SQLAlchemy, Prisma, TypeORM)
+- N+1 query prevention
+- Backup and recovery strategies
+- Common gotchas (NULL handling, implicit conversions, timezone issues)`
+};
+
+// src/agents/sme/devops.ts
+var devopsSMEConfig = {
+  domain: "devops",
+  description: "DevOps, CI/CD, containers, and infrastructure-as-code (Docker, Kubernetes, GitHub Actions, Terraform)",
+  guidance: `For DevOps tasks, provide:
+- **Docker**: Dockerfile best practices, multi-stage builds, compose files, networking modes, volume mounts, registry usage
+- **Kubernetes**: Deployment/Service/Ingress manifests, ConfigMaps, Secrets, Helm charts, kubectl commands, resource limits
+- **GitHub Actions**: Workflow syntax, job dependencies, matrix builds, secrets management, reusable workflows, artifact handling
+- **Azure DevOps**: Pipeline YAML, stages/jobs/steps, variable groups, service connections, artifact feeds
+- **GitLab CI**: .gitlab-ci.yml structure, runners, environments, Auto DevOps
+- **Terraform**: HCL syntax, provider configuration, state management, modules, workspaces, import existing resources
+- **Ansible**: Playbook structure, roles, inventory management, vault encryption, idempotency
+- Container image optimization (layer caching, minimal base images, security scanning)
+- CI/CD pipeline design (build, test, deploy stages)
+- Branch strategies (GitFlow, trunk-based development)
+- Secrets management (HashiCorp Vault, Azure Key Vault, AWS Secrets Manager)
+- Infrastructure patterns (immutable infrastructure, blue-green, canary)
+- Monitoring and observability setup (Prometheus, Grafana, ELK)
+- Common gotchas (state drift, secret exposure, resource cleanup)`
 };
 
 // src/agents/sme/linux.ts
@@ -14546,6 +14632,27 @@ var vmwareSMEConfig = {
 - Performance metrics and monitoring (Get-Stat)`
 };
 
+// src/agents/sme/web.ts
+var webSMEConfig = {
+  domain: "web",
+  description: "Web and frontend development (Flutter, React, Vue, Angular, JavaScript/TypeScript, HTML/CSS)",
+  guidance: `For web/frontend tasks, provide:
+- **Flutter**: Dart syntax, widget composition, state management (Provider, Riverpod, Bloc), platform channels, pub.dev packages, hot reload workflow
+- **React**: Hooks (useState, useEffect, useMemo), context, Redux/Zustand, Next.js App Router, server components, React Native considerations
+- **Vue**: Composition API, Pinia stores, Nuxt 3, Vue Router, reactive refs
+- **Angular**: Components, services, dependency injection, RxJS patterns, NgRx, Angular CLI commands
+- **Svelte**: Runes ($state, $derived), SvelteKit routing, stores
+- **JavaScript/TypeScript**: ES modules, async/await, type narrowing, bundler config (Vite, webpack, esbuild)
+- **HTML/CSS**: Semantic markup, Flexbox/Grid layouts, CSS custom properties, Tailwind utility classes, SCSS
+- **Browser APIs**: DOM manipulation, Fetch API, Web Storage, Service Workers, WebSockets
+- Framework selection guidance based on project requirements
+- Component architecture and reusability patterns
+- State management strategies (local vs global)
+- Build optimization and code splitting
+- Responsive design and accessibility (WCAG)
+- Common gotchas (hydration mismatches, bundle size, memory leaks)`
+};
+
 // src/agents/sme/windows.ts
 var windowsSMEConfig = {
   domain: "windows",
@@ -14576,7 +14683,11 @@ var SME_CONFIGS = {
   vmware: vmwareSMEConfig,
   azure: azureSMEConfig,
   active_directory: activeDirectorySMEConfig,
-  ui_ux: uiUxSMEConfig
+  ui_ux: uiUxSMEConfig,
+  web: webSMEConfig,
+  database: databaseSMEConfig,
+  devops: devopsSMEConfig,
+  api: apiSMEConfig
 };
 var AGENT_TO_DOMAIN = {
   sme_windows: "windows",
@@ -14589,7 +14700,11 @@ var AGENT_TO_DOMAIN = {
   sme_vmware: "vmware",
   sme_azure: "azure",
   sme_active_directory: "active_directory",
-  sme_ui_ux: "ui_ux"
+  sme_ui_ux: "ui_ux",
+  sme_web: "web",
+  sme_database: "database",
+  sme_devops: "devops",
+  sme_api: "api"
 };
 function createAllSMEAgents(getModel, loadPrompt) {
   return Object.entries(AGENT_TO_DOMAIN).map(([agentName, domain2]) => {
