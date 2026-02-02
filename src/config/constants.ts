@@ -50,21 +50,21 @@ export const CATEGORY_PREFIXES = {
 // Default models for each agent/category
 export const DEFAULT_MODELS: Record<string, string> = {
 	// Orchestrator
-	architect: 'kimi-for-coding/k2p5',
+	architect: 'anthropic/claude-sonnet-4-5',
 
 	// Fast explorer agent (use cheap/fast model)
-	explorer: 'opencode/gpt-5-nano',
+	explorer: 'google/gemini-2.0-flash',
 
 	// Pipeline agents
-	coder: 'zai-coding-plan/glm-4.7',
-	test_engineer: 'zai-coding-plan/glm-4.7-flash',
+	coder: 'anthropic/claude-sonnet-4-5',
+	test_engineer: 'google/gemini-2.0-flash',
 
 	// Category defaults
-	_sme: 'nvidia/openai/gpt-oss-120b',
-	_qa: 'nvidia/openai/gpt-oss-120b',
+	_sme: 'google/gemini-2.0-flash',
+	_qa: 'google/gemini-2.0-flash',
 
 	// Fallback
-	default: 'google/gemini-2.5-flash',
+	default: 'google/gemini-2.0-flash',
 };
 
 // Domain patterns for automatic detection

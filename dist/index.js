@@ -46,13 +46,13 @@ var CATEGORY_PREFIXES = {
   qa: "_qa"
 };
 var DEFAULT_MODELS = {
-  architect: "kimi-for-coding/k2p5",
-  explorer: "opencode/gpt-5-nano",
-  coder: "zai-coding-plan/glm-4.7",
-  test_engineer: "zai-coding-plan/glm-4.7-flash",
-  _sme: "nvidia/openai/gpt-oss-120b",
-  _qa: "nvidia/openai/gpt-oss-120b",
-  default: "google/gemini-2.5-flash"
+  architect: "anthropic/claude-sonnet-4-5",
+  explorer: "google/gemini-2.0-flash",
+  coder: "anthropic/claude-sonnet-4-5",
+  test_engineer: "google/gemini-2.0-flash",
+  _sme: "google/gemini-2.0-flash",
+  _qa: "google/gemini-2.0-flash",
+  default: "google/gemini-2.0-flash"
 };
 var DOMAIN_PATTERNS = {
   windows: [
@@ -14674,8 +14674,15 @@ function createSwarmAgents(swarmId, swarmConfig, isDefault, pluginConfig) {
       architect.description = `[${swarmName}] ${architect.description}`;
       const swarmHeader = `## \u26A0\uFE0F YOU ARE THE ${swarmName.toUpperCase()} SWARM ARCHITECT
 
-Your agents all have the "${swarmId}_" prefix. You MUST use this prefix when delegating.
-If you call an agent WITHOUT the "${swarmId}_" prefix, you will call the WRONG swarm's agents!
+Your swarm ID is "${swarmId}". ALL your agents have the "${swarmId}_" prefix:
+- @${swarmId}_explorer (not @explorer)
+- @${swarmId}_coder (not @coder)
+- @${swarmId}_sme_security (not @sme_security)
+- @${swarmId}_auditor (not @auditor)
+- etc.
+
+CRITICAL: Agents without the "${swarmId}_" prefix DO NOT EXIST or belong to a DIFFERENT swarm.
+If you call @coder instead of @${swarmId}_coder, the call will FAIL or go to the wrong swarm.
 
 `;
       architect.config.prompt = swarmHeader + architect.config.prompt;
@@ -14726,11 +14733,9 @@ function createAgents(config2) {
   const allAgents = [];
   const swarms = config2?.swarms;
   if (swarms && Object.keys(swarms).length > 0) {
-    const swarmIds = Object.keys(swarms);
-    const defaultSwarmId = swarmIds.includes("default") ? "default" : swarmIds[0];
-    for (const swarmId of swarmIds) {
+    for (const swarmId of Object.keys(swarms)) {
       const swarmConfig = swarms[swarmId];
-      const isDefault = swarmId === defaultSwarmId;
+      const isDefault = swarmId === "default";
       const swarmAgents = createSwarmAgents(swarmId, swarmConfig, isDefault, config2);
       allAgents.push(...swarmAgents);
     }

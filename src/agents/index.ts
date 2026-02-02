@@ -145,20 +145,27 @@ function createSwarmAgents(
 		// Replace placeholders in architect prompt
 		const swarmName = swarmConfig.name || swarmId;
 		const swarmIdentity = isDefault ? 'default' : swarmId;
-		const agentPrefix = prefix; // Empty for default, "local_" for local, etc.
+		const agentPrefix = prefix; // Empty for default, "cloud_" for cloud, "local_" for local, etc.
 		
 		architect.config.prompt = architect.config.prompt
 			?.replace(/\{\{SWARM_ID\}\}/g, swarmIdentity)
 			.replace(/\{\{AGENT_PREFIX\}\}/g, agentPrefix)
 			.replace(/\{\{QA_RETRY_LIMIT\}\}/g, String(qaRetryLimit));
 		
-		// Add warning header for non-default swarms
+		// Add swarm identity header for non-default swarms
 		if (!isDefault) {
 			architect.description = `[${swarmName}] ${architect.description}`;
 			const swarmHeader = `## ⚠️ YOU ARE THE ${swarmName.toUpperCase()} SWARM ARCHITECT
 
-Your agents all have the "${swarmId}_" prefix. You MUST use this prefix when delegating.
-If you call an agent WITHOUT the "${swarmId}_" prefix, you will call the WRONG swarm's agents!
+Your swarm ID is "${swarmId}". ALL your agents have the "${swarmId}_" prefix:
+- @${swarmId}_explorer (not @explorer)
+- @${swarmId}_coder (not @coder)
+- @${swarmId}_sme_security (not @sme_security)
+- @${swarmId}_auditor (not @auditor)
+- etc.
+
+CRITICAL: Agents without the "${swarmId}_" prefix DO NOT EXIST or belong to a DIFFERENT swarm.
+If you call @coder instead of @${swarmId}_coder, the call will FAIL or go to the wrong swarm.
 
 `;
 			architect.config.prompt = swarmHeader + architect.config.prompt;
@@ -249,14 +256,11 @@ export function createAgents(config?: PluginConfig): AgentDefinition[] {
 	
 	if (swarms && Object.keys(swarms).length > 0) {
 		// Multiple swarms mode
-		const swarmIds = Object.keys(swarms);
-		
-		// Determine which swarm is the default (first one, or one named "default")
-		const defaultSwarmId = swarmIds.includes('default') ? 'default' : swarmIds[0];
-		
-		for (const swarmId of swarmIds) {
+		// Only a swarm explicitly named "default" gets unprefixed agents
+		// All other swarms get prefixed (cloud_*, local_*, etc.)
+		for (const swarmId of Object.keys(swarms)) {
 			const swarmConfig = swarms[swarmId];
-			const isDefault = swarmId === defaultSwarmId;
+			const isDefault = swarmId === 'default';
 			const swarmAgents = createSwarmAgents(swarmId, swarmConfig, isDefault, config);
 			allAgents.push(...swarmAgents);
 		}
