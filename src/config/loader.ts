@@ -6,6 +6,8 @@ import { type PluginConfig, PluginConfigSchema } from './schema';
 const CONFIG_FILENAME = 'opencode-swarm.json';
 const PROMPTS_DIR_NAME = 'opencode-swarm';
 
+export const MAX_CONFIG_FILE_BYTES = 102_400;
+
 /**
  * Get the user's configuration directory (XDG Base Directory spec).
  */
@@ -18,6 +20,15 @@ function getUserConfigDir(): string {
  */
 function loadConfigFromPath(configPath: string): PluginConfig | null {
 	try {
+		// Check file size before reading
+		const stats = fs.statSync(configPath);
+		if (stats.size > MAX_CONFIG_FILE_BYTES) {
+			console.warn(
+				`[opencode-swarm] Config file too large (max 100 KB): ${configPath}`,
+			);
+			return null;
+		}
+
 		const content = fs.readFileSync(configPath, 'utf-8');
 		const rawConfig = JSON.parse(content);
 		const result = PluginConfigSchema.safeParse(rawConfig);
@@ -44,15 +55,20 @@ function loadConfigFromPath(configPath: string): PluginConfig | null {
 	}
 }
 
+export const MAX_MERGE_DEPTH = 10;
+
 /**
  * Deep merge two objects, with override values taking precedence.
+ * Internal implementation with depth tracking to prevent infinite recursion.
  */
-export function deepMerge<T extends Record<string, unknown>>(
-	base?: T,
-	override?: T,
-): T | undefined {
-	if (!base) return override;
-	if (!override) return base;
+function deepMergeInternal<T extends Record<string, unknown>>(
+	base: T,
+	override: T,
+	depth: number,
+): T {
+	if (depth >= MAX_MERGE_DEPTH) {
+		throw new Error(`deepMerge exceeded maximum depth of ${MAX_MERGE_DEPTH}`);
+	}
 
 	const result = { ...base } as T;
 	for (const key of Object.keys(override) as (keyof T)[]) {
@@ -67,15 +83,29 @@ export function deepMerge<T extends Record<string, unknown>>(
 			!Array.isArray(baseVal) &&
 			!Array.isArray(overrideVal)
 		) {
-			result[key] = deepMerge(
+			result[key] = deepMergeInternal(
 				baseVal as Record<string, unknown>,
 				overrideVal as Record<string, unknown>,
+				depth + 1,
 			) as T[keyof T];
 		} else {
 			result[key] = overrideVal;
 		}
 	}
 	return result;
+}
+
+/**
+ * Deep merge two objects, with override values taking precedence.
+ */
+export function deepMerge<T extends Record<string, unknown>>(
+	base?: T,
+	override?: T,
+): T | undefined {
+	if (!base) return override;
+	if (!override) return base;
+
+	return deepMergeInternal(base, override, 0);
 }
 
 /**

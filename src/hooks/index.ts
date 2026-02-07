@@ -16,4 +16,5 @@ export {
 	estimateTokens,
 	readSwarmFileAsync,
 	safeHook,
+	validateSwarmPath,
 } from './utils';

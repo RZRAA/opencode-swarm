@@ -137,16 +137,16 @@ OUTPUT: VERDICT + RISK + ISSUES
 
 | Tool | Calls | Success | Failed | Avg Duration |
 |------|-------|---------|--------|--------------|
-| read | 446 | 446 | 0 | 12ms |
-| bash | 314 | 314 | 0 | 1542ms |
-| edit | 223 | 223 | 0 | 1474ms |
-| glob | 118 | 118 | 0 | 52ms |
-| write | 99 | 99 | 0 | 1722ms |
-| apply_patch | 75 | 75 | 0 | 1475ms |
-| task | 74 | 74 | 0 | 118932ms |
-| grep | 26 | 26 | 0 | 44ms |
-| todowrite | 16 | 16 | 0 | 3ms |
-| memory_list | 4 | 4 | 0 | 2ms |
-| memory_set | 3 | 3 | 0 | 5ms |
-| memory_replace | 1 | 1 | 0 | 81ms |
-| invalid | 1 | 1 | 0 | 2ms |
+| read | 649 | 649 | 0 | 10ms |
+| bash | 440 | 440 | 0 | 1841ms |
+| edit | 319 | 319 | 0 | 1455ms |
+| glob | 126 | 126 | 0 | 51ms |
+| write | 108 | 108 | 0 | 1707ms |
+| apply_patch | 104 | 104 | 0 | 1634ms |
+| task | 104 | 104 | 0 | 112343ms |
+| grep | 43 | 43 | 0 | 46ms |
+| todowrite | 29 | 29 | 0 | 6ms |
+| memory_set | 6 | 6 | 0 | 4ms |
+| memory_replace | 6 | 6 | 0 | 16ms |
+| memory_list | 5 | 5 | 0 | 1ms |
+| invalid | 3 | 3 | 0 | 2ms |

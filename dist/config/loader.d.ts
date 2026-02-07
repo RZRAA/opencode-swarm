@@ -1,4 +1,6 @@
 import { type PluginConfig } from './schema';
+export declare const MAX_CONFIG_FILE_BYTES = 102400;
+export declare const MAX_MERGE_DEPTH = 10;
 /**
  * Deep merge two objects, with override values taking precedence.
  */

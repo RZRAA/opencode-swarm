@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { safeHook, composeHandlers, readSwarmFileAsync, estimateTokens } from '../../../src/hooks/utils';
+import { safeHook, composeHandlers, readSwarmFileAsync, estimateTokens, validateSwarmPath } from '../../../src/hooks/utils';
 import { mkdtemp, writeFile, unlink, mkdir } from 'node:fs/promises';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -318,6 +318,88 @@ describe('Hook Utilities', () => {
 			const result = await readSwarmFileAsync(tempDir, 'special.txt');
 
 			expect(result).toBe(content);
+		});
+
+		it('returns null when path traversal is attempted with ../', async () => {
+			const result = await readSwarmFileAsync(tempDir, '../outside.txt');
+			expect(result).toBeNull();
+		});
+
+		it('returns null when path traversal is attempted with ..\\', async () => {
+			const result = await readSwarmFileAsync(tempDir, '..\\outside.txt');
+			expect(result).toBeNull();
+		});
+
+		it('returns null when filename contains null bytes', async () => {
+			const result = await readSwarmFileAsync(tempDir, 'test\0file.txt');
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('validateSwarmPath', () => {
+		let tempDir: string;
+
+		beforeEach(async () => {
+			tempDir = await mkdtemp(join(tmpdir(), 'swarm-test-'));
+		});
+
+		afterEach(async () => {
+			try {
+				await rm(tempDir, { recursive: true, force: true });
+			} catch (error) {
+				// Ignore cleanup errors
+			}
+		});
+
+		it('returns resolved path for valid filenames', async () => {
+			const swarmDir = join(tempDir, '.swarm');
+			await mkdir(swarmDir, { recursive: true });
+			const testFile = join(swarmDir, 'test.txt');
+			await writeFile(testFile, 'test content');
+
+			const result = validateSwarmPath(tempDir, 'test.txt');
+			
+			expect(result).toBe(testFile);
+		});
+
+		it('rejects filenames with null bytes', () => {
+			expect(() => validateSwarmPath(tempDir, 'test\0file.txt'))
+				.toThrow('Invalid filename: contains null bytes');
+		});
+
+		it('rejects path traversal attempts with ../', () => {
+			expect(() => validateSwarmPath(tempDir, '../outside.txt'))
+				.toThrow('Invalid filename: path traversal detected');
+		});
+
+		it('rejects path traversal attempts with ..\\', () => {
+			expect(() => validateSwarmPath(tempDir, '..\\outside.txt'))
+				.toThrow('Invalid filename: path traversal detected');
+		});
+
+		it('rejects path traversal attempts with directory traversal', () => {
+			expect(() => validateSwarmPath(tempDir, 'subdir/../../../outside.txt'))
+				.toThrow('Invalid filename: path traversal detected');
+		});
+
+		it('rejects absolute paths', () => {
+			const absolutePath = process.platform === 'win32' ? 'C:\\windows\\system32\\cmd.exe' : '/etc/passwd';
+			expect(() => validateSwarmPath(tempDir, absolutePath))
+				.toThrow('Invalid filename: path escapes .swarm directory');
+		});
+
+		it('handles normalized paths correctly', async () => {
+			const swarmDir = join(tempDir, '.swarm');
+			const subdir = join(swarmDir, 'subdir');
+			const testFile = join(subdir, 'test.txt');
+			
+			// Create the directory structure
+			await mkdir(subdir, { recursive: true });
+			await writeFile(testFile, 'test content');
+
+			// Test with a path that needs normalization but doesn't contain traversal
+			const result = validateSwarmPath(tempDir, 'subdir/./test.txt');
+			expect(result).toBe(testFile);
 		});
 	});
 

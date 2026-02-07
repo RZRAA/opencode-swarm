@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { fetchGitingest } from '../../../src/tools/gitingest';
+import { fetchGitingest, GITINGEST_MAX_RESPONSE_BYTES } from '../../../src/tools/gitingest';
 
 describe('gitingest', () => {
     let originalFetch: typeof fetch;
@@ -107,6 +107,120 @@ describe('gitingest', () => {
             await expect(fetchGitingest({ url: 'https://github.com/test/repo' }))
                 .rejects
                 .toThrow('Network error');
+        });
+
+        it('should pass AbortSignal to fetch', async () => {
+            globalThis.fetch = (async (url: string, init?: RequestInit) => {
+                lastFetchArgs = [url, init];
+                expect(init?.signal).toBeInstanceOf(AbortSignal);
+                return new Response(JSON.stringify({
+                    summary: 'Test Summary',
+                    tree: 'Test Tree Content',
+                    content: 'Test File Content'
+                }), { status: 200 });
+            }) as typeof fetch;
+
+            await fetchGitingest({ url: 'https://github.com/test/repo' });
+        });
+
+        it('should throw timeout error on DOMException AbortError', async () => {
+            let callCount = 0;
+            globalThis.fetch = (async () => {
+                callCount++;
+                throw new DOMException('Aborted', 'AbortError');
+            }) as typeof fetch;
+
+            await expect(fetchGitingest({ url: 'https://github.com/test/repo' }))
+                .rejects
+                .toThrow('gitingest request timed out');
+        });
+
+        it('should retry on 5xx errors', async () => {
+            let callCount = 0;
+            globalThis.fetch = (async (url: string, init?: RequestInit) => {
+                callCount++;
+                if (callCount <= 2) {
+                    return new Response('Internal Server Error', { status: 500 });
+                }
+                return new Response(JSON.stringify({
+                    summary: 'Test Summary',
+                    tree: 'Test Tree Content',
+                    content: 'Test File Content'
+                }), { status: 200 });
+            }) as typeof fetch;
+
+            const result = await fetchGitingest({ url: 'https://github.com/test/repo' });
+            expect(result).toBe('Test Summary\n\nTest Tree Content\n\nTest File Content');
+            expect(callCount).toBe(3);
+        });
+
+        it('should not retry on 4xx errors', async () => {
+            let callCount = 0;
+            globalThis.fetch = (async () => {
+                callCount++;
+                return new Response('Bad Request', { 
+                    status: 400, 
+                    statusText: 'Bad Request'
+                });
+            }) as typeof fetch;
+
+            await expect(fetchGitingest({ url: 'https://github.com/test/repo' }))
+                .rejects
+                .toThrow('gitingest API error: 400 Bad Request');
+            expect(callCount).toBe(1);
+        });
+
+        it('should throw on Content-Length exceeding limit', async () => {
+            globalThis.fetch = (async () => {
+                const headers = new Headers();
+                headers.set('content-length', '10000000');
+                return new Response(JSON.stringify({
+                    summary: 'Test Summary',
+                    tree: 'Test Tree Content',
+                    content: 'Test File Content'
+                }), { 
+                    status: 200,
+                    headers
+                });
+            }) as typeof fetch;
+
+            await expect(fetchGitingest({ url: 'https://github.com/test/repo' }))
+                .rejects
+                .toThrow('gitingest response too large');
+        });
+
+        it('should throw on response body exceeding size limit', async () => {
+            const largeContent = 'x'.repeat(GITINGEST_MAX_RESPONSE_BYTES + 1);
+            globalThis.fetch = (async () => {
+                return new Response(JSON.stringify({
+                    summary: 'Test Summary',
+                    tree: 'Test Tree Content',
+                    content: largeContent
+                }), { status: 200 });
+            }) as typeof fetch;
+
+            await expect(fetchGitingest({ url: 'https://github.com/test/repo' }))
+                .rejects
+                .toThrow('gitingest response too large');
+        });
+
+        it('should retry on network errors then succeed', async () => {
+            let callCount = 0;
+            globalThis.fetch = (async () => {
+                callCount++;
+                if (callCount === 1) {
+                    throw new Error('fetch failed');
+                }
+                return new Response(JSON.stringify({
+                    summary: 'Test Summary',
+                    tree: 'Test Tree Content',
+                    content: 'Test File Content'
+                }), { status: 200 });
+            }) as typeof fetch;
+
+            const result = await fetchGitingest({ url: 'https://github.com/test/repo' });
+            expect(result).toBe('Test Summary\n\nTest Tree Content\n\nTest File Content');
+            expect(callCount).toBe(2);
         });
     });
 });

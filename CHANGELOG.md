@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.2] - 2026-02-07
+### Security
+- **Path validation** — Added `validateSwarmPath()` to prevent directory traversal in `.swarm` file operations. Rejects null bytes, `..` traversal sequences, and paths escaping the `.swarm` directory. Windows-aware case-insensitive comparison.
+- **Fetch hardening** — Added 10s timeout (AbortController), 5MB response size limit, and retry logic (2 retries with exponential backoff on 5xx/network errors) to the gitingest tool.
+- **Deep merge depth limit** — Added `MAX_MERGE_DEPTH=10` to `deepMerge` to prevent stack overflow from deeply nested config objects.
+- **Config file size limit** — Added `MAX_CONFIG_FILE_BYTES=102400` (100KB) check in `loadConfigFromPath` to prevent memory exhaustion from oversized config files.
+
+### Added
+- **23 new security-focused tests** (506 total) — Path validation (11), fetch hardening (7), merge depth limit (3), config size limit (2).
+
 ## [4.3.1] - 2026-02-07
 ### Fixed
 - **Agent identity hardening** — Added `## IDENTITY` block at the top of all 6 subagent prompts (coder, explorer, sme, reviewer, critic, test_engineer) with explicit anti-delegation directives, WRONG/RIGHT examples, and explanation that @agent references in task payloads are orchestrator context, not delegation instructions. Fixes issue where subagents would attempt to delegate via the Task tool instead of doing work themselves.

@@ -6,6 +6,7 @@
  * token estimation for swarm-related operations.
  */
 
+import * as path from 'node:path';
 import { warn } from '../utils';
 
 export function safeHook<I, O>(
@@ -36,14 +37,54 @@ export function composeHandlers<I, O>(
 	};
 }
 
+/**
+ * Validates that a filename is safe to use within the .swarm directory
+ *
+ * @param directory - The base directory containing the .swarm folder
+ * @param filename - The filename to validate
+ * @returns The resolved absolute path if validation passes
+ * @throws Error if the filename is invalid or attempts path traversal
+ */
+export function validateSwarmPath(directory: string, filename: string): string {
+	// Reject null bytes
+	if (/[\0]/.test(filename)) {
+		throw new Error('Invalid filename: contains null bytes');
+	}
+
+	// Reject path traversal attempts
+	if (/\.\.[/\\]/.test(filename)) {
+		throw new Error('Invalid filename: path traversal detected');
+	}
+
+	// Resolve the base directory and the requested file
+	const baseDir = path.normalize(path.resolve(directory, '.swarm'));
+	const resolved = path.normalize(path.resolve(baseDir, filename));
+
+	// Check that the resolved path is within the .swarm directory
+	if (process.platform === 'win32') {
+		// On Windows, do case-insensitive comparison
+		if (
+			!resolved.toLowerCase().startsWith((baseDir + path.sep).toLowerCase())
+		) {
+			throw new Error('Invalid filename: path escapes .swarm directory');
+		}
+	} else {
+		// On other platforms, do case-sensitive comparison
+		if (!resolved.startsWith(baseDir + path.sep)) {
+			throw new Error('Invalid filename: path escapes .swarm directory');
+		}
+	}
+
+	return resolved;
+}
+
 export async function readSwarmFileAsync(
 	directory: string,
 	filename: string,
 ): Promise<string | null> {
-	const path = `${directory}/.swarm/${filename}`;
-
 	try {
-		const file = Bun.file(path);
+		const resolvedPath = validateSwarmPath(directory, filename);
+		const file = Bun.file(resolvedPath);
 		const content = await file.text();
 		return content;
 	} catch {

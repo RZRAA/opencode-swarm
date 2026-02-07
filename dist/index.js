@@ -13603,11 +13603,17 @@ import * as os from "os";
 import * as path from "path";
 var CONFIG_FILENAME = "opencode-swarm.json";
 var PROMPTS_DIR_NAME = "opencode-swarm";
+var MAX_CONFIG_FILE_BYTES = 102400;
 function getUserConfigDir() {
   return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 }
 function loadConfigFromPath(configPath) {
   try {
+    const stats = fs.statSync(configPath);
+    if (stats.size > MAX_CONFIG_FILE_BYTES) {
+      console.warn(`[opencode-swarm] Config file too large (max 100 KB): ${configPath}`);
+      return null;
+    }
     const content = fs.readFileSync(configPath, "utf-8");
     const rawConfig = JSON.parse(content);
     const result = PluginConfigSchema.safeParse(rawConfig);
@@ -13624,22 +13630,29 @@ function loadConfigFromPath(configPath) {
     return null;
   }
 }
-function deepMerge(base, override) {
-  if (!base)
-    return override;
-  if (!override)
-    return base;
+var MAX_MERGE_DEPTH = 10;
+function deepMergeInternal(base, override, depth) {
+  if (depth >= MAX_MERGE_DEPTH) {
+    throw new Error(`deepMerge exceeded maximum depth of ${MAX_MERGE_DEPTH}`);
+  }
   const result = { ...base };
   for (const key of Object.keys(override)) {
     const baseVal = base[key];
     const overrideVal = override[key];
     if (typeof baseVal === "object" && baseVal !== null && typeof overrideVal === "object" && overrideVal !== null && !Array.isArray(baseVal) && !Array.isArray(overrideVal)) {
-      result[key] = deepMerge(baseVal, overrideVal);
+      result[key] = deepMergeInternal(baseVal, overrideVal, depth + 1);
     } else {
       result[key] = overrideVal;
     }
   }
   return result;
+}
+function deepMerge(base, override) {
+  if (!base)
+    return override;
+  if (!override)
+    return base;
+  return deepMergeInternal(base, override, 0);
 }
 function loadPluginConfig(directory) {
   const userConfigPath = path.join(getUserConfigDir(), "opencode", CONFIG_FILENAME);
@@ -14397,6 +14410,9 @@ function handleAgentsCommand(agents) {
 `);
 }
 
+// src/hooks/utils.ts
+import * as path2 from "path";
+
 // src/utils/logger.ts
 var DEBUG = process.env.OPENCODE_SWARM_DEBUG === "1";
 function log(message, data) {
@@ -14439,10 +14455,30 @@ function composeHandlers(...fns) {
     }
   };
 }
+function validateSwarmPath(directory, filename) {
+  if (/[\0]/.test(filename)) {
+    throw new Error("Invalid filename: contains null bytes");
+  }
+  if (/\.\.[/\\]/.test(filename)) {
+    throw new Error("Invalid filename: path traversal detected");
+  }
+  const baseDir = path2.normalize(path2.resolve(directory, ".swarm"));
+  const resolved = path2.normalize(path2.resolve(baseDir, filename));
+  if (process.platform === "win32") {
+    if (!resolved.toLowerCase().startsWith((baseDir + path2.sep).toLowerCase())) {
+      throw new Error("Invalid filename: path escapes .swarm directory");
+    }
+  } else {
+    if (!resolved.startsWith(baseDir + path2.sep)) {
+      throw new Error("Invalid filename: path escapes .swarm directory");
+    }
+  }
+  return resolved;
+}
 async function readSwarmFileAsync(directory, filename) {
-  const path2 = `${directory}/.swarm/${filename}`;
   try {
-    const file2 = Bun.file(path2);
+    const resolvedPath = validateSwarmPath(directory, filename);
+    const file2 = Bun.file(resolvedPath);
     const content = await file2.text();
     return content;
   } catch {
@@ -14781,8 +14817,8 @@ async function doFlush(directory) {
     const activitySection = renderActivitySection();
     const updated = replaceOrAppendSection(existing, "## Agent Activity", activitySection);
     const flushedCount = swarmState.pendingEvents;
-    const path2 = `${directory}/.swarm/context.md`;
-    await Bun.write(path2, updated);
+    const path3 = `${directory}/.swarm/context.md`;
+    await Bun.write(path3, updated);
     swarmState.pendingEvents = Math.max(0, swarmState.pendingEvents - flushedCount);
   } catch (error49) {
     warn("Agent activity flush failed:", error49);
@@ -15801,10 +15837,10 @@ function mergeDefs2(...defs) {
 function cloneDef2(schema) {
   return mergeDefs2(schema._zod.def);
 }
-function getElementAtPath2(obj, path2) {
-  if (!path2)
+function getElementAtPath2(obj, path3) {
+  if (!path3)
     return obj;
-  return path2.reduce((acc, key) => acc?.[key], obj);
+  return path3.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject2(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -16163,11 +16199,11 @@ function aborted2(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues2(path2, issues) {
+function prefixIssues2(path3, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path2);
+    iss.path.unshift(path3);
     return iss;
   });
 }
@@ -16335,7 +16371,7 @@ function treeifyError2(error49, _mapper) {
     return issue3.message;
   };
   const result = { errors: [] };
-  const processError = (error50, path2 = []) => {
+  const processError = (error50, path3 = []) => {
     var _a2, _b;
     for (const issue3 of error50.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
@@ -16345,7 +16381,7 @@ function treeifyError2(error49, _mapper) {
       } else if (issue3.code === "invalid_element") {
         processError({ issues: issue3.issues }, issue3.path);
       } else {
-        const fullpath = [...path2, ...issue3.path];
+        const fullpath = [...path3, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -16377,8 +16413,8 @@ function treeifyError2(error49, _mapper) {
 }
 function toDotPath2(_path) {
   const segs = [];
-  const path2 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path2) {
+  const path3 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path3) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -27574,7 +27610,7 @@ Use these as DOMAIN values when delegating to @sme.`;
 });
 // src/tools/file-extractor.ts
 import * as fs2 from "fs";
-import * as path2 from "path";
+import * as path3 from "path";
 var EXT_MAP = {
   python: ".py",
   py: ".py",
@@ -27652,12 +27688,12 @@ var extract_code_blocks = tool({
       if (prefix) {
         filename = `${prefix}_${filename}`;
       }
-      let filepath = path2.join(targetDir, filename);
-      const base = path2.basename(filepath, path2.extname(filepath));
-      const ext = path2.extname(filepath);
+      let filepath = path3.join(targetDir, filename);
+      const base = path3.basename(filepath, path3.extname(filepath));
+      const ext = path3.extname(filepath);
       let counter = 1;
       while (fs2.existsSync(filepath)) {
-        filepath = path2.join(targetDir, `${base}_${counter}${ext}`);
+        filepath = path3.join(targetDir, `${base}_${counter}${ext}`);
         counter++;
       }
       try {
@@ -27686,26 +27722,73 @@ Errors:
   }
 });
 // src/tools/gitingest.ts
+var GITINGEST_TIMEOUT_MS = 1e4;
+var GITINGEST_MAX_RESPONSE_BYTES = 5242880;
+var GITINGEST_MAX_RETRIES = 2;
+var delay = (ms) => new Promise((resolve2) => setTimeout(resolve2, ms));
 async function fetchGitingest(args) {
-  const response = await fetch("https://gitingest.com/api/ingest", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      input_text: args.url,
-      max_file_size: args.maxFileSize ?? 50000,
-      pattern: args.pattern ?? "",
-      pattern_type: args.patternType ?? "exclude"
-    })
-  });
-  if (!response.ok) {
-    throw new Error(`gitingest API error: ${response.status} ${response.statusText}`);
-  }
-  const data = await response.json();
-  return `${data.summary}
+  for (let attempt = 0;attempt <= GITINGEST_MAX_RETRIES; attempt++) {
+    try {
+      const controller = new AbortController;
+      const timeoutId = setTimeout(() => controller.abort(), GITINGEST_TIMEOUT_MS);
+      const response = await fetch("https://gitingest.com/api/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input_text: args.url,
+          max_file_size: args.maxFileSize ?? 50000,
+          pattern: args.pattern ?? "",
+          pattern_type: args.patternType ?? "exclude"
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (response.status >= 500 && attempt < GITINGEST_MAX_RETRIES) {
+        const backoff = 200 * 2 ** attempt;
+        await delay(backoff);
+        continue;
+      }
+      if (response.status >= 400 && response.status < 500) {
+        throw new Error(`gitingest API error: ${response.status} ${response.statusText}`);
+      }
+      if (!response.ok) {
+        throw new Error(`gitingest API error: ${response.status} ${response.statusText}`);
+      }
+      const contentLength = Number(response.headers.get("content-length"));
+      if (Number.isFinite(contentLength) && contentLength > GITINGEST_MAX_RESPONSE_BYTES) {
+        throw new Error("gitingest response too large");
+      }
+      const text = await response.text();
+      if (Buffer.byteLength(text) > GITINGEST_MAX_RESPONSE_BYTES) {
+        throw new Error("gitingest response too large");
+      }
+      const data = JSON.parse(text);
+      return `${data.summary}
 
 ${data.tree}
 
 ${data.content}`;
+    } catch (error93) {
+      if (error93 instanceof DOMException && (error93.name === "TimeoutError" || error93.name === "AbortError")) {
+        if (attempt >= GITINGEST_MAX_RETRIES) {
+          throw new Error("gitingest request timed out");
+        }
+        const backoff = 200 * 2 ** attempt;
+        await delay(backoff);
+        continue;
+      }
+      if (error93 instanceof Error && error93.message.startsWith("gitingest ")) {
+        throw error93;
+      }
+      if (attempt < GITINGEST_MAX_RETRIES) {
+        const backoff = 200 * 2 ** attempt;
+        await delay(backoff);
+        continue;
+      }
+      throw error93;
+    }
+  }
+  throw new Error("gitingest request failed after retries");
 }
 var gitingest = tool({
   description: "Fetch a GitHub repository's full content via gitingest.com. Returns summary, directory tree, and file contents optimized for LLM analysis. Use when you need to understand an external repository's structure or code.",

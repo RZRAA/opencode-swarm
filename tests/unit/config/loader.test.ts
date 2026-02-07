@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { deepMerge, loadPluginConfig, loadAgentPrompt } from '../../../src/config/loader';
+import { deepMerge, loadPluginConfig, loadAgentPrompt, MAX_MERGE_DEPTH, MAX_CONFIG_FILE_BYTES } from '../../../src/config/loader';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -104,6 +104,34 @@ describe('config/loader', () => {
 				optional: 'now has value',
 				required: 'value',
 			});
+		});
+
+		it('should throw when depth exceeds MAX_MERGE_DEPTH', () => {
+			function createDeeplyNested(depth: number): Record<string, unknown> {
+				let obj: Record<string, unknown> = { leaf: 'value' };
+				for (let i = 0; i < depth; i++) {
+					obj = { nested: obj };
+				}
+				return obj;
+			}
+			const deep = createDeeplyNested(12);
+			expect(() => deepMerge(deep, deep)).toThrow('deepMerge exceeded maximum depth');
+		});
+
+		it('should handle objects at exactly MAX_MERGE_DEPTH', () => {
+			function createDeeplyNested(depth: number): Record<string, unknown> {
+				let obj: Record<string, unknown> = { leaf: 'value' };
+				for (let i = 0; i < depth; i++) {
+					obj = { nested: obj };
+				}
+				return obj;
+			}
+			const atLimit = createDeeplyNested(9);
+			expect(() => deepMerge(atLimit, atLimit)).not.toThrow();
+		});
+
+		it('should export MAX_MERGE_DEPTH as 10', () => {
+			expect(MAX_MERGE_DEPTH).toBe(10);
 		});
 
 		it('should handle new keys in override not present in base', () => {
@@ -289,6 +317,39 @@ describe('config/loader', () => {
 			expect(result.inject_phase_reminders).toBe(true); // Default value
 			
 			// Clean up project directory
+			fs.rmSync(projectDir, { recursive: true, force: true });
+		});
+
+		it('should export MAX_CONFIG_FILE_BYTES as 102400', () => {
+			expect(MAX_CONFIG_FILE_BYTES).toBe(102_400);
+		});
+
+		it('returns defaults when config file is too large', () => {
+			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+			const configDir = path.join(projectDir, '.opencode');
+			const configFile = path.join(configDir, 'opencode-swarm.json');
+			fs.mkdirSync(configDir, { recursive: true });
+			// Write a file larger than 100KB
+			const largeContent = JSON.stringify({ max_iterations: 3 }) + ' '.repeat(110_000);
+			fs.writeFileSync(configFile, largeContent);
+			
+			const result = loadPluginConfig(projectDir);
+			// Should return defaults since the oversized file is ignored
+			expect(result.max_iterations).toBe(5); // default
+			
+			fs.rmSync(projectDir, { recursive: true, force: true });
+		});
+
+		it('loads config when file is under size limit', () => {
+			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+			const configDir = path.join(projectDir, '.opencode');
+			const configFile = path.join(configDir, 'opencode-swarm.json');
+			fs.mkdirSync(configDir, { recursive: true });
+			fs.writeFileSync(configFile, JSON.stringify({ max_iterations: 4 }));
+			
+			const result = loadPluginConfig(projectDir);
+			expect(result.max_iterations).toBe(4);
+			
 			fs.rmSync(projectDir, { recursive: true, force: true });
 		});
 

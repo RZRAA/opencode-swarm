@@ -5,4 +5,4 @@ export { createDelegationTrackerHook } from './delegation-tracker';
 export { extractCurrentPhase, extractCurrentTask, extractDecisions, extractIncompleteTasks, extractPatterns, } from './extractors';
 export { createPipelineTrackerHook } from './pipeline-tracker';
 export { createSystemEnhancerHook } from './system-enhancer';
-export { composeHandlers, estimateTokens, readSwarmFileAsync, safeHook, } from './utils';
+export { composeHandlers, estimateTokens, readSwarmFileAsync, safeHook, validateSwarmPath, } from './utils';
