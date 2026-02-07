@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-4.3.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-8-orange" alt="Agents">
-  <img src="https://img.shields.io/badge/tests-447-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-483-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">🐝 OpenCode Swarm</h1>

@@ -387,4 +387,48 @@ describe('Agent Creation Functions', () => {
 			expect(agentWithBoth.config.prompt).toBe(custom);
 		});
 	});
+
+	describe('Identity Hardening', () => {
+		const subagents = [
+			{ name: 'coder', create: createCoderAgent },
+			{ name: 'explorer', create: createExplorerAgent },
+			{ name: 'sme', create: createSMEAgent },
+			{ name: 'reviewer', create: createReviewerAgent },
+			{ name: 'critic', create: createCriticAgent },
+			{ name: 'test_engineer', create: createTestEngineerAgent },
+		];
+
+		for (const { name, create } of subagents) {
+			describe(name, () => {
+				const agent = create('test-model');
+				const prompt = agent.config.prompt || '';
+
+				test('prompt starts with ## IDENTITY header', () => {
+					expect(prompt.startsWith('## IDENTITY')).toBe(true);
+				});
+
+				test('contains anti-delegation directive', () => {
+					expect(prompt).toContain('DO NOT use the Task tool to delegate to other agents');
+				});
+
+				test('contains identity reinforcement', () => {
+					expect(prompt).toContain('You ARE the agent that does the work');
+				});
+
+				test('contains agent reference explanation', () => {
+					expect(prompt).toContain('IGNORE them');
+					expect(prompt).toContain('context from the orchestrator');
+				});
+
+				test('contains WRONG/RIGHT examples', () => {
+					expect(prompt).toContain('WRONG:');
+					expect(prompt).toContain('RIGHT:');
+				});
+
+				test('does not contain "No delegation" as a standalone rule', () => {
+					expect(prompt).not.toContain('- No delegation');
+				});
+			});
+		}
+	});
 });

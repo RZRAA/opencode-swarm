@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.1] - 2026-02-07
+### Fixed
+- **Agent identity hardening** — Added `## IDENTITY` block at the top of all 6 subagent prompts (coder, explorer, sme, reviewer, critic, test_engineer) with explicit anti-delegation directives, WRONG/RIGHT examples, and explanation that @agent references in task payloads are orchestrator context, not delegation instructions. Fixes issue where subagents would attempt to delegate via the Task tool instead of doing work themselves.
+
+### Added
+- **36 new tests** (483 total) — Identity hardening tests verify anti-delegation markers in all subagent prompts.
+
 ## [4.3.0] - 2026-02-07
 ### Added
 - **Hooks pipeline system** — `safeHook()` crash-safety wrapper and `composeHandlers()` for composing multiple handlers on the same hook type. Foundation for all v4.3.0 features.

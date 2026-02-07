@@ -132,3 +132,21 @@ OUTPUT: VERDICT + RISK + ISSUES
 - System prompt injection keeps agents focused post-compaction
 - Budget warnings at 70% and 90% thresholds (configurable)
 - Different agents need different context: coder needs code, reviewer needs code + requirements, architect needs everything
+
+## Agent Activity
+
+| Tool | Calls | Success | Failed | Avg Duration |
+|------|-------|---------|--------|--------------|
+| read | 446 | 446 | 0 | 12ms |
+| bash | 314 | 314 | 0 | 1542ms |
+| edit | 223 | 223 | 0 | 1474ms |
+| glob | 118 | 118 | 0 | 52ms |
+| write | 99 | 99 | 0 | 1722ms |
+| apply_patch | 75 | 75 | 0 | 1475ms |
+| task | 74 | 74 | 0 | 118932ms |
+| grep | 26 | 26 | 0 | 44ms |
+| todowrite | 16 | 16 | 0 | 3ms |
+| memory_list | 4 | 4 | 0 | 2ms |
+| memory_set | 3 | 3 | 0 | 5ms |
+| memory_replace | 1 | 1 | 0 | 81ms |
+| invalid | 1 | 1 | 0 | 2ms |
