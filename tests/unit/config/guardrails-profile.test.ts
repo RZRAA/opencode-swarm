@@ -3,6 +3,7 @@ import {
 	GuardrailsProfileSchema,
 	GuardrailsConfigSchema,
 	resolveGuardrailsConfig,
+	DEFAULT_ARCHITECT_PROFILE,
 	type GuardrailsConfig,
 } from '../../../src/config/schema';
 
@@ -291,5 +292,89 @@ describe('resolveGuardrailsConfig', () => {
 
 		const testerResult = resolveGuardrailsConfig(config, 'tester');
 		expect(testerResult.max_repetitions).toBe(10);
+	});
+});
+
+describe('resolveGuardrailsConfig architect defaults', () => {
+	const base: GuardrailsConfig = {
+		enabled: true,
+		max_tool_calls: 200,
+		max_duration_minutes: 30,
+		max_repetitions: 10,
+		max_consecutive_errors: 5,
+		warning_threshold: 0.5,
+	};
+
+	it('architect gets built-in default profile automatically', () => {
+		const result = resolveGuardrailsConfig(base, 'architect');
+		expect(result.max_tool_calls).toBe(600);
+		expect(result.max_duration_minutes).toBe(90);
+		expect(result.max_consecutive_errors).toBe(8);
+		expect(result.warning_threshold).toBe(0.7);
+	});
+
+	it('architect built-in does not override max_repetitions (not in DEFAULT_ARCHITECT_PROFILE)', () => {
+		const result = resolveGuardrailsConfig(base, 'architect');
+		expect(result.max_repetitions).toBe(10);
+	});
+
+	it('non-architect agents do not get built-in defaults', () => {
+		const result = resolveGuardrailsConfig(base, 'coder');
+		expect(result).toBe(base);
+	});
+
+	it('user profile overrides built-in architect defaults', () => {
+		const config: GuardrailsConfig = {
+			...base,
+			profiles: {
+				architect: { max_tool_calls: 300 },
+			},
+		};
+
+		const result = resolveGuardrailsConfig(config, 'architect');
+		expect(result.max_tool_calls).toBe(300); // User wins
+		expect(result.max_duration_minutes).toBe(90); // Built-in
+		expect(result.warning_threshold).toBe(0.7); // Built-in
+	});
+
+	it('user can fully override all architect built-in defaults', () => {
+		const config: GuardrailsConfig = {
+			...base,
+			profiles: {
+				architect: {
+					max_tool_calls: 250,
+					max_duration_minutes: 45,
+					max_consecutive_errors: 4,
+					warning_threshold: 0.6,
+				},
+			},
+		};
+
+		const result = resolveGuardrailsConfig(config, 'architect');
+		expect(result.max_tool_calls).toBe(250);
+		expect(result.max_duration_minutes).toBe(45);
+		expect(result.max_consecutive_errors).toBe(4);
+		expect(result.warning_threshold).toBe(0.6);
+	});
+
+	it('DEFAULT_ARCHITECT_PROFILE values are within schema bounds', () => {
+		const result = GuardrailsProfileSchema.parse(DEFAULT_ARCHITECT_PROFILE);
+		expect(result.max_tool_calls).toBe(600);
+		expect(result.max_duration_minutes).toBe(90);
+		expect(result.max_consecutive_errors).toBe(8);
+		expect(result.warning_threshold).toBe(0.7);
+	});
+
+	it('architect built-in does not affect other agents in same config', () => {
+		const config: GuardrailsConfig = {
+			...base,
+			profiles: {
+				coder: { max_tool_calls: 100 },
+			},
+		};
+
+		const result = resolveGuardrailsConfig(config, 'coder');
+		expect(result.max_tool_calls).toBe(100); // coder profile
+		expect(result.max_duration_minutes).toBe(30); // base, NOT 90
 	});
 });

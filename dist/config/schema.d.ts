@@ -45,6 +45,7 @@ export declare const GuardrailsProfileSchema: z.ZodObject<{
     warning_threshold: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>;
 export type GuardrailsProfile = z.infer<typeof GuardrailsProfileSchema>;
+export declare const DEFAULT_ARCHITECT_PROFILE: GuardrailsProfile;
 export declare const GuardrailsConfigSchema: z.ZodObject<{
     enabled: z.ZodDefault<z.ZodBoolean>;
     max_tool_calls: z.ZodDefault<z.ZodNumber>;
@@ -63,7 +64,8 @@ export declare const GuardrailsConfigSchema: z.ZodObject<{
 export type GuardrailsConfig = z.infer<typeof GuardrailsConfigSchema>;
 /**
  * Resolve guardrails configuration for a specific agent.
- * Merges the base config with any per-agent profile overrides.
+ * Merges the base config with built-in defaults (for the architect) and
+ * any per-agent profile overrides. Merge order: base < built-in < user profile.
  *
  * @param base - The base guardrails configuration
  * @param agentName - Optional agent name to look up profile overrides

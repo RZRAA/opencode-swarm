@@ -13623,6 +13623,12 @@ var GuardrailsProfileSchema = exports_external.object({
   max_consecutive_errors: exports_external.number().min(2).max(20).optional(),
   warning_threshold: exports_external.number().min(0.1).max(0.9).optional()
 });
+var DEFAULT_ARCHITECT_PROFILE = {
+  max_tool_calls: 600,
+  max_duration_minutes: 90,
+  max_consecutive_errors: 8,
+  warning_threshold: 0.7
+};
 var GuardrailsConfigSchema = exports_external.object({
   enabled: exports_external.boolean().default(true),
   max_tool_calls: exports_external.number().min(10).max(1000).default(200),
@@ -13633,11 +13639,15 @@ var GuardrailsConfigSchema = exports_external.object({
   profiles: exports_external.record(exports_external.string(), GuardrailsProfileSchema).optional()
 });
 function resolveGuardrailsConfig(base, agentName) {
-  if (!agentName || !base.profiles?.[agentName]) {
+  if (!agentName) {
     return base;
   }
-  const profile = base.profiles[agentName];
-  return { ...base, ...profile };
+  const builtIn = agentName === ORCHESTRATOR_NAME ? DEFAULT_ARCHITECT_PROFILE : undefined;
+  const userProfile = base.profiles?.[agentName];
+  if (!builtIn && !userProfile) {
+    return base;
+  }
+  return { ...base, ...builtIn, ...userProfile };
 }
 var PluginConfigSchema = exports_external.object({
   agents: exports_external.record(exports_external.string(), AgentOverrideConfigSchema).optional(),

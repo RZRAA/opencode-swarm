@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ORCHESTRATOR_NAME } from './constants';
 
 // Agent override configuration
 export const AgentOverrideConfigSchema = z.object({
@@ -62,6 +63,13 @@ export const GuardrailsProfileSchema = z.object({
 
 export type GuardrailsProfile = z.infer<typeof GuardrailsProfileSchema>;
 
+export const DEFAULT_ARCHITECT_PROFILE: GuardrailsProfile = {
+	max_tool_calls: 600,
+	max_duration_minutes: 90,
+	max_consecutive_errors: 8,
+	warning_threshold: 0.7,
+};
+
 // Guardrails configuration
 export const GuardrailsConfigSchema = z.object({
 	enabled: z.boolean().default(true),
@@ -77,7 +85,8 @@ export type GuardrailsConfig = z.infer<typeof GuardrailsConfigSchema>;
 
 /**
  * Resolve guardrails configuration for a specific agent.
- * Merges the base config with any per-agent profile overrides.
+ * Merges the base config with built-in defaults (for the architect) and
+ * any per-agent profile overrides. Merge order: base < built-in < user profile.
  *
  * @param base - The base guardrails configuration
  * @param agentName - Optional agent name to look up profile overrides
@@ -87,11 +96,22 @@ export function resolveGuardrailsConfig(
 	base: GuardrailsConfig,
 	agentName?: string,
 ): GuardrailsConfig {
-	if (!agentName || !base.profiles?.[agentName]) {
+	if (!agentName) {
 		return base;
 	}
-	const profile = base.profiles[agentName];
-	return { ...base, ...profile };
+
+	// Layer 1: Apply built-in defaults for the architect
+	const builtIn =
+		agentName === ORCHESTRATOR_NAME ? DEFAULT_ARCHITECT_PROFILE : undefined;
+
+	// Layer 2: Apply user-defined profile overrides (highest priority)
+	const userProfile = base.profiles?.[agentName];
+
+	if (!builtIn && !userProfile) {
+		return base;
+	}
+
+	return { ...base, ...builtIn, ...userProfile };
 }
 
 // Main plugin configuration
