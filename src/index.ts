@@ -2,6 +2,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { createAgents, getAgentConfigs } from './agents';
 import { createSwarmCommandHandler } from './commands';
 import { loadPluginConfig } from './config';
+import { ORCHESTRATOR_NAME } from './config/constants';
 import { GuardrailsConfigSchema } from './config/schema';
 import {
 	composeHandlers,
@@ -14,6 +15,7 @@ import {
 	createSystemEnhancerHook,
 	safeHook,
 } from './hooks';
+import { swarmState } from './state';
 import { detect_domains, extract_code_blocks, gitingest } from './tools';
 import { log } from './utils';
 
@@ -130,6 +132,11 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		// Track tool usage + guardrails
 		// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
 		'tool.execute.before': (async (input: any, output: any) => {
+			// If no active agent is mapped for this session, it's the primary agent (architect)
+			// Subagent delegations always set activeAgent via chat.message before tool calls
+			if (!swarmState.activeAgent.has(input.sessionID)) {
+				swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+			}
 			// Guardrails runs first WITHOUT safeHook — throws must propagate to block tools
 			await guardrailsHooks.toolBefore(input, output);
 			// Activity tracking runs second WITH safeHook — errors should not propagate

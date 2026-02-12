@@ -9,3 +9,13 @@ export type AgentName = (typeof ALL_AGENT_NAMES)[number];
 export declare const DEFAULT_MODELS: Record<string, string>;
 export declare function isQAAgent(name: string): name is QAAgentName;
 export declare function isSubagent(name: string): boolean;
+import type { ScoringConfig } from './schema';
+export declare const DEFAULT_SCORING_CONFIG: ScoringConfig;
+/**
+ * Resolve scoring configuration by deep-merging user config with defaults.
+ * Missing scoring block → use defaults; partial weights → merge with defaults.
+ *
+ * @param userConfig - Optional user-provided scoring configuration
+ * @returns The effective scoring configuration with all defaults applied
+ */
+export declare function resolveScoringConfig(userConfig?: ScoringConfig): ScoringConfig;

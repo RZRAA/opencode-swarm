@@ -26,29 +26,6 @@ var __export = (target, all) => {
 };
 var __require = import.meta.require;
 
-// src/config/constants.ts
-var QA_AGENTS = ["reviewer", "critic"];
-var PIPELINE_AGENTS = ["explorer", "coder", "test_engineer"];
-var ORCHESTRATOR_NAME = "architect";
-var ALL_SUBAGENT_NAMES = [
-  "sme",
-  ...QA_AGENTS,
-  ...PIPELINE_AGENTS
-];
-var ALL_AGENT_NAMES = [
-  ORCHESTRATOR_NAME,
-  ...ALL_SUBAGENT_NAMES
-];
-var DEFAULT_MODELS = {
-  architect: "anthropic/claude-sonnet-4-5",
-  explorer: "google/gemini-2.0-flash",
-  coder: "anthropic/claude-sonnet-4-5",
-  test_engineer: "google/gemini-2.0-flash",
-  sme: "google/gemini-2.0-flash",
-  reviewer: "google/gemini-2.0-flash",
-  critic: "google/gemini-2.0-flash",
-  default: "google/gemini-2.0-flash"
-};
 // src/config/loader.ts
 import * as fs from "fs";
 import * as os from "os";
@@ -13603,12 +13580,40 @@ var HooksConfigSchema = exports_external.object({
   delegation_tracker: exports_external.boolean().default(false),
   agent_awareness_max_chars: exports_external.number().min(50).max(2000).default(300)
 });
+var ScoringWeightsSchema = exports_external.object({
+  phase: exports_external.number().min(0).max(5).default(1),
+  current_task: exports_external.number().min(0).max(5).default(2),
+  blocked_task: exports_external.number().min(0).max(5).default(1.5),
+  recent_failure: exports_external.number().min(0).max(5).default(2.5),
+  recent_success: exports_external.number().min(0).max(5).default(0.5),
+  evidence_presence: exports_external.number().min(0).max(5).default(1),
+  decision_recency: exports_external.number().min(0).max(5).default(1.5),
+  dependency_proximity: exports_external.number().min(0).max(5).default(1)
+});
+var DecisionDecaySchema = exports_external.object({
+  mode: exports_external.enum(["linear", "exponential"]).default("exponential"),
+  half_life_hours: exports_external.number().min(1).max(168).default(24)
+});
+var TokenRatiosSchema = exports_external.object({
+  prose: exports_external.number().min(0.1).max(1).default(0.25),
+  code: exports_external.number().min(0.1).max(1).default(0.4),
+  markdown: exports_external.number().min(0.1).max(1).default(0.3),
+  json: exports_external.number().min(0.1).max(1).default(0.35)
+});
+var ScoringConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(false),
+  max_candidates: exports_external.number().min(10).max(500).default(100),
+  weights: ScoringWeightsSchema.optional(),
+  decision_decay: DecisionDecaySchema.optional(),
+  token_ratios: TokenRatiosSchema.optional()
+});
 var ContextBudgetConfigSchema = exports_external.object({
   enabled: exports_external.boolean().default(true),
   warn_threshold: exports_external.number().min(0).max(1).default(0.7),
   critical_threshold: exports_external.number().min(0).max(1).default(0.9),
   model_limits: exports_external.record(exports_external.string(), exports_external.number().min(1000)).default({ default: 128000 }),
-  max_injection_tokens: exports_external.number().min(100).max(50000).default(4000)
+  max_injection_tokens: exports_external.number().min(100).max(50000).default(4000),
+  scoring: ScoringConfigSchema.optional()
 });
 var EvidenceConfigSchema = exports_external.object({
   enabled: exports_external.boolean().default(true),
@@ -13691,8 +13696,9 @@ function resolveGuardrailsConfig(base, agentName) {
     return base;
   }
   const baseName = stripKnownSwarmPrefix(agentName);
-  const builtIn = DEFAULT_AGENT_PROFILES[baseName];
-  const userProfile = base.profiles?.[baseName] ?? base.profiles?.[agentName];
+  const effectiveName = baseName === "unknown" ? ORCHESTRATOR_NAME : baseName;
+  const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];
+  const userProfile = base.profiles?.[effectiveName] ?? base.profiles?.[baseName] ?? base.profiles?.[agentName];
   if (!builtIn && !userProfile) {
     return base;
   }
@@ -13803,6 +13809,30 @@ function loadAgentPrompt(agentName) {
   }
   return result;
 }
+
+// src/config/constants.ts
+var QA_AGENTS = ["reviewer", "critic"];
+var PIPELINE_AGENTS = ["explorer", "coder", "test_engineer"];
+var ORCHESTRATOR_NAME = "architect";
+var ALL_SUBAGENT_NAMES = [
+  "sme",
+  ...QA_AGENTS,
+  ...PIPELINE_AGENTS
+];
+var ALL_AGENT_NAMES = [
+  ORCHESTRATOR_NAME,
+  ...ALL_SUBAGENT_NAMES
+];
+var DEFAULT_MODELS = {
+  architect: "anthropic/claude-sonnet-4-5",
+  explorer: "google/gemini-2.0-flash",
+  coder: "anthropic/claude-sonnet-4-5",
+  test_engineer: "google/gemini-2.0-flash",
+  sme: "google/gemini-2.0-flash",
+  reviewer: "google/gemini-2.0-flash",
+  critic: "google/gemini-2.0-flash",
+  default: "google/gemini-2.0-flash"
+};
 // src/config/plan-schema.ts
 var TaskStatusSchema = exports_external.enum([
   "pending",
@@ -29361,6 +29391,9 @@ var OpenCodeSwarm = async (ctx) => {
     "experimental.session.compacting": compactionHook["experimental.session.compacting"],
     "command.execute.before": safeHook(commandHandler),
     "tool.execute.before": async (input, output) => {
+      if (!swarmState.activeAgent.has(input.sessionID)) {
+        swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+      }
       await guardrailsHooks.toolBefore(input, output);
       await safeHook(activityHooks.toolBefore)(input, output);
     },

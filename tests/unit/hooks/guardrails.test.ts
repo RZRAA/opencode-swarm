@@ -76,7 +76,7 @@ describe('guardrails circuit breaker', () => {
 		it('warning issued at threshold', async () => {
 			const config = defaultConfig({ max_tool_calls: 10, warning_threshold: 0.5 });
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'unknown');
+			startAgentSession('test-session', 'custom_agent');
 
 			for (let i = 0; i < 5; i++) {
 				await hooks.toolBefore(makeInput('test-session'), makeOutput());
@@ -89,7 +89,7 @@ describe('guardrails circuit breaker', () => {
 		it('throws at hard limit', async () => {
 			const config = defaultConfig({ max_tool_calls: 5 });
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'unknown');
+			startAgentSession('test-session', 'custom_agent');
 
 			// First 4 should not throw (0-4 increments, but limit is 5)
 			for (let i = 0; i < 4; i++) {
@@ -104,7 +104,7 @@ describe('guardrails circuit breaker', () => {
 		it('blocks all subsequent calls after hard limit', async () => {
 			const config = defaultConfig({ max_tool_calls: 3 });
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'unknown');
+			startAgentSession('test-session', 'custom_agent');
 
 			// First 2 should not throw
 			for (let i = 0; i < 2; i++) {
@@ -125,7 +125,7 @@ describe('guardrails circuit breaker', () => {
 		it('throws at duration limit', async () => {
 			const config = defaultConfig({ max_duration_minutes: 30 });
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'unknown');
+			startAgentSession('test-session', 'custom_agent');
 
 			// Manually set startTime to 31 minutes ago
 			const session = getAgentSession('test-session');
@@ -140,7 +140,7 @@ describe('guardrails circuit breaker', () => {
 		it('warning at duration threshold', async () => {
 			const config = defaultConfig({ max_duration_minutes: 30, warning_threshold: 0.5 });
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'unknown');
+			startAgentSession('test-session', 'custom_agent');
 
 			// Manually set startTime to 16 minutes ago (above 15 min threshold)
 			const session = getAgentSession('test-session');
@@ -201,6 +201,7 @@ describe('guardrails circuit breaker', () => {
 		it('warning at repetition threshold', async () => {
 			const config = defaultConfig({ max_repetitions: 10, warning_threshold: 0.5 });
 			const hooks = createGuardrailsHooks(config);
+			startAgentSession('test-session', 'custom_agent');
 			const args = { filePath: '/test.ts' };
 
 			// Make 5 identical calls (threshold is 5)
@@ -478,8 +479,8 @@ describe('guardrails circuit breaker', () => {
 			}
 			// No error thrown - coder's limit of 20 not reached
 
-			// But a unknown agent session would throw at 10 (uses base limit)
-			startAgentSession('default-session', 'unknown');
+			// But a custom agent session would throw at 10 (uses base limit)
+			startAgentSession('default-session', 'custom_agent');
 			for (let i = 0; i < 9; i++) {
 				await hooks.toolBefore(
 					makeInput('default-session', `tool-${i}`, `call-d-${i}`),
@@ -525,7 +526,7 @@ describe('guardrails circuit breaker', () => {
 			).rejects.toThrow('LIMIT REACHED');
 		});
 
-		it('unknown agent (auto-created session) uses base config', async () => {
+		it('custom agent (auto-created session) uses base config', async () => {
 			const config = defaultConfig({
 				max_tool_calls: 5,
 				profiles: {
@@ -535,8 +536,9 @@ describe('guardrails circuit breaker', () => {
 			});
 			const hooks = createGuardrailsHooks(config);
 
-			// Don't create a session - let toolBefore auto-create it as 'unknown'
-			// The session gets auto-created with agentName='unknown'
+			// Create a session with a custom agent name (not a built-in profile)
+			// This agent will use base config limits
+			startAgentSession('unknown-session', 'custom_agent');
 
 			// Make 4 calls - should be fine
 			for (let i = 0; i < 4; i++) {
@@ -546,7 +548,7 @@ describe('guardrails circuit breaker', () => {
 				);
 			}
 
-			// 5th call should throw (unknown agent has no profile, uses base limit of 5)
+			// 5th call should throw (custom agent has no profile, uses base limit of 5)
 			await expect(
 				hooks.toolBefore(
 					makeInput('unknown-session', 'tool-5', 'call-5'),

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.10] - 2026-02-12
+### Fixed
+- **Architect session stuck with 30-minute limit** — The primary architect session's agent name was never set in `swarmState.activeAgent` because `delegation-tracker.ts` bails immediately when `input.agent` is empty (which is the case for primary sessions). When the first tool call arrived, `ensureAgentSession()` created a session with `agentName: 'unknown'`, and `resolveGuardrailsConfig()` returned the base config (30-minute limit) since 'unknown' had no built-in profile. Two-layer fix:
+  1. **Primary session defaults to architect** — In `tool.execute.before` hook, if no active agent is mapped for the session, it's the primary agent, so we set `activeAgent` to `ORCHESTRATOR_NAME` ('architect'). Subagent delegations always set activeAgent via chat.message before tool calls.
+  2. **Belt-and-suspenders: 'unknown' → architect** — In `resolveGuardrailsConfig()`, the agent name 'unknown' is now treated as 'architect'. This makes resolution resilient even if the race recurs through a different code path.
+
+### Changed
+- `resolveGuardrailsConfig()` now maps 'unknown' to architect profile, ensuring unlimited limits for any session that falls through the cracks.
+
+### Tests
+- Updated guardrails tests to use 'custom_agent' instead of 'unknown' for tests that need base config limits, since 'unknown' now maps to architect (unlimited).
+- 975 tests passing (2 unrelated dist-integrity path format failures remain).
+
 ## [5.0.9] - 2026-02-11
 ### Fixed
 - **Stale 30-minute guardrail when agent switches** — Session state (counters, tracking data) now resets when `agentName` changes in `ensureAgentSession()`, preventing previous agent's limits from affecting the new agent.

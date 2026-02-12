@@ -55,3 +55,55 @@ export function isQAAgent(name: string): name is QAAgentName {
 export function isSubagent(name: string): boolean {
 	return (ALL_SUBAGENT_NAMES as readonly string[]).includes(name);
 }
+
+import { deepMerge } from './loader';
+import type { ScoringConfig } from './schema';
+
+// Default scoring configuration
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+	enabled: false,
+	max_candidates: 100,
+	weights: {
+		phase: 1.0,
+		current_task: 2.0,
+		blocked_task: 1.5,
+		recent_failure: 2.5,
+		recent_success: 0.5,
+		evidence_presence: 1.0,
+		decision_recency: 1.5,
+		dependency_proximity: 1.0,
+	},
+	decision_decay: {
+		mode: 'exponential',
+		half_life_hours: 24,
+	},
+	token_ratios: {
+		prose: 0.25,
+		code: 0.4,
+		markdown: 0.3,
+		json: 0.35,
+	},
+};
+
+/**
+ * Resolve scoring configuration by deep-merging user config with defaults.
+ * Missing scoring block → use defaults; partial weights → merge with defaults.
+ *
+ * @param userConfig - Optional user-provided scoring configuration
+ * @returns The effective scoring configuration with all defaults applied
+ */
+export function resolveScoringConfig(
+	userConfig?: ScoringConfig,
+): ScoringConfig {
+	if (!userConfig) {
+		return DEFAULT_SCORING_CONFIG;
+	}
+
+	// Deep merge user config with defaults
+	const merged = deepMerge(
+		DEFAULT_SCORING_CONFIG as Record<string, unknown>,
+		userConfig as Record<string, unknown>,
+	);
+
+	return merged as ScoringConfig;
+}

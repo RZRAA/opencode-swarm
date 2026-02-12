@@ -22,12 +22,93 @@ export declare const HooksConfigSchema: z.ZodObject<{
     agent_awareness_max_chars: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export type HooksConfig = z.infer<typeof HooksConfigSchema>;
+export declare const ScoringWeightsSchema: z.ZodObject<{
+    phase: z.ZodDefault<z.ZodNumber>;
+    current_task: z.ZodDefault<z.ZodNumber>;
+    blocked_task: z.ZodDefault<z.ZodNumber>;
+    recent_failure: z.ZodDefault<z.ZodNumber>;
+    recent_success: z.ZodDefault<z.ZodNumber>;
+    evidence_presence: z.ZodDefault<z.ZodNumber>;
+    decision_recency: z.ZodDefault<z.ZodNumber>;
+    dependency_proximity: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export type ScoringWeights = z.infer<typeof ScoringWeightsSchema>;
+export declare const DecisionDecaySchema: z.ZodObject<{
+    mode: z.ZodDefault<z.ZodEnum<{
+        linear: "linear";
+        exponential: "exponential";
+    }>>;
+    half_life_hours: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export type DecisionDecay = z.infer<typeof DecisionDecaySchema>;
+export declare const TokenRatiosSchema: z.ZodObject<{
+    prose: z.ZodDefault<z.ZodNumber>;
+    code: z.ZodDefault<z.ZodNumber>;
+    markdown: z.ZodDefault<z.ZodNumber>;
+    json: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export type TokenRatios = z.infer<typeof TokenRatiosSchema>;
+export declare const ScoringConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    max_candidates: z.ZodDefault<z.ZodNumber>;
+    weights: z.ZodOptional<z.ZodObject<{
+        phase: z.ZodDefault<z.ZodNumber>;
+        current_task: z.ZodDefault<z.ZodNumber>;
+        blocked_task: z.ZodDefault<z.ZodNumber>;
+        recent_failure: z.ZodDefault<z.ZodNumber>;
+        recent_success: z.ZodDefault<z.ZodNumber>;
+        evidence_presence: z.ZodDefault<z.ZodNumber>;
+        decision_recency: z.ZodDefault<z.ZodNumber>;
+        dependency_proximity: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>>;
+    decision_decay: z.ZodOptional<z.ZodObject<{
+        mode: z.ZodDefault<z.ZodEnum<{
+            linear: "linear";
+            exponential: "exponential";
+        }>>;
+        half_life_hours: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>>;
+    token_ratios: z.ZodOptional<z.ZodObject<{
+        prose: z.ZodDefault<z.ZodNumber>;
+        code: z.ZodDefault<z.ZodNumber>;
+        markdown: z.ZodDefault<z.ZodNumber>;
+        json: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type ScoringConfig = z.infer<typeof ScoringConfigSchema>;
 export declare const ContextBudgetConfigSchema: z.ZodObject<{
     enabled: z.ZodDefault<z.ZodBoolean>;
     warn_threshold: z.ZodDefault<z.ZodNumber>;
     critical_threshold: z.ZodDefault<z.ZodNumber>;
     model_limits: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodNumber>>;
     max_injection_tokens: z.ZodDefault<z.ZodNumber>;
+    scoring: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        max_candidates: z.ZodDefault<z.ZodNumber>;
+        weights: z.ZodOptional<z.ZodObject<{
+            phase: z.ZodDefault<z.ZodNumber>;
+            current_task: z.ZodDefault<z.ZodNumber>;
+            blocked_task: z.ZodDefault<z.ZodNumber>;
+            recent_failure: z.ZodDefault<z.ZodNumber>;
+            recent_success: z.ZodDefault<z.ZodNumber>;
+            evidence_presence: z.ZodDefault<z.ZodNumber>;
+            decision_recency: z.ZodDefault<z.ZodNumber>;
+            dependency_proximity: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>>;
+        decision_decay: z.ZodOptional<z.ZodObject<{
+            mode: z.ZodDefault<z.ZodEnum<{
+                linear: "linear";
+                exponential: "exponential";
+            }>>;
+            half_life_hours: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>>;
+        token_ratios: z.ZodOptional<z.ZodObject<{
+            prose: z.ZodDefault<z.ZodNumber>;
+            code: z.ZodDefault<z.ZodNumber>;
+            markdown: z.ZodDefault<z.ZodNumber>;
+            json: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 export type ContextBudgetConfig = z.infer<typeof ContextBudgetConfigSchema>;
 export declare const EvidenceConfigSchema: z.ZodObject<{
@@ -126,6 +207,33 @@ export declare const PluginConfigSchema: z.ZodObject<{
         critical_threshold: z.ZodDefault<z.ZodNumber>;
         model_limits: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodNumber>>;
         max_injection_tokens: z.ZodDefault<z.ZodNumber>;
+        scoring: z.ZodOptional<z.ZodObject<{
+            enabled: z.ZodDefault<z.ZodBoolean>;
+            max_candidates: z.ZodDefault<z.ZodNumber>;
+            weights: z.ZodOptional<z.ZodObject<{
+                phase: z.ZodDefault<z.ZodNumber>;
+                current_task: z.ZodDefault<z.ZodNumber>;
+                blocked_task: z.ZodDefault<z.ZodNumber>;
+                recent_failure: z.ZodDefault<z.ZodNumber>;
+                recent_success: z.ZodDefault<z.ZodNumber>;
+                evidence_presence: z.ZodDefault<z.ZodNumber>;
+                decision_recency: z.ZodDefault<z.ZodNumber>;
+                dependency_proximity: z.ZodDefault<z.ZodNumber>;
+            }, z.core.$strip>>;
+            decision_decay: z.ZodOptional<z.ZodObject<{
+                mode: z.ZodDefault<z.ZodEnum<{
+                    linear: "linear";
+                    exponential: "exponential";
+                }>>;
+                half_life_hours: z.ZodDefault<z.ZodNumber>;
+            }, z.core.$strip>>;
+            token_ratios: z.ZodOptional<z.ZodObject<{
+                prose: z.ZodDefault<z.ZodNumber>;
+                code: z.ZodDefault<z.ZodNumber>;
+                markdown: z.ZodDefault<z.ZodNumber>;
+                json: z.ZodDefault<z.ZodNumber>;
+            }, z.core.$strip>>;
+        }, z.core.$strip>>;
     }, z.core.$strip>>;
     guardrails: z.ZodOptional<z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;

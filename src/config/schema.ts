@@ -29,6 +29,49 @@ export const HooksConfigSchema = z.object({
 
 export type HooksConfig = z.infer<typeof HooksConfigSchema>;
 
+// Scoring weights configuration
+export const ScoringWeightsSchema = z.object({
+	phase: z.number().min(0).max(5).default(1.0),
+	current_task: z.number().min(0).max(5).default(2.0),
+	blocked_task: z.number().min(0).max(5).default(1.5),
+	recent_failure: z.number().min(0).max(5).default(2.5),
+	recent_success: z.number().min(0).max(5).default(0.5),
+	evidence_presence: z.number().min(0).max(5).default(1.0),
+	decision_recency: z.number().min(0).max(5).default(1.5),
+	dependency_proximity: z.number().min(0).max(5).default(1.0),
+});
+
+export type ScoringWeights = z.infer<typeof ScoringWeightsSchema>;
+
+// Decision decay configuration
+export const DecisionDecaySchema = z.object({
+	mode: z.enum(['linear', 'exponential']).default('exponential'),
+	half_life_hours: z.number().min(1).max(168).default(24),
+});
+
+export type DecisionDecay = z.infer<typeof DecisionDecaySchema>;
+
+// Token ratios configuration
+export const TokenRatiosSchema = z.object({
+	prose: z.number().min(0.1).max(1.0).default(0.25),
+	code: z.number().min(0.1).max(1.0).default(0.4),
+	markdown: z.number().min(0.1).max(1.0).default(0.3),
+	json: z.number().min(0.1).max(1.0).default(0.35),
+});
+
+export type TokenRatios = z.infer<typeof TokenRatiosSchema>;
+
+// Scoring configuration
+export const ScoringConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	max_candidates: z.number().min(10).max(500).default(100),
+	weights: ScoringWeightsSchema.optional(),
+	decision_decay: DecisionDecaySchema.optional(),
+	token_ratios: TokenRatiosSchema.optional(),
+});
+
+export type ScoringConfig = z.infer<typeof ScoringConfigSchema>;
+
 // Context budget configuration
 export const ContextBudgetConfigSchema = z.object({
 	enabled: z.boolean().default(true),
@@ -38,6 +81,7 @@ export const ContextBudgetConfigSchema = z.object({
 		.record(z.string(), z.number().min(1000))
 		.default({ default: 128000 }),
 	max_injection_tokens: z.number().min(100).max(50000).default(4000),
+	scoring: ScoringConfigSchema.optional(),
 });
 
 export type ContextBudgetConfig = z.infer<typeof ContextBudgetConfigSchema>;
@@ -165,12 +209,19 @@ export function resolveGuardrailsConfig(
 	// Strip known swarm prefixes to get the base agent name
 	const baseName = stripKnownSwarmPrefix(agentName);
 
-	// Layer 1: Apply built-in defaults for the agent (using base name)
-	const builtIn = DEFAULT_AGENT_PROFILES[baseName];
+	// Belt-and-suspenders: treat 'unknown' as the orchestrator (architect)
+	// This makes resolution resilient even if the race recurs through a different code path
+	const effectiveName = baseName === 'unknown' ? ORCHESTRATOR_NAME : baseName;
+
+	// Layer 1: Apply built-in defaults for the agent (using effective name)
+	const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];
 
 	// Layer 2: Apply user-defined profile overrides (highest priority)
-	// Check base name first, then fall back to prefixed name for backwards compatibility
-	const userProfile = base.profiles?.[baseName] ?? base.profiles?.[agentName];
+	// Check effective name first, then base name, then original name for backwards compatibility
+	const userProfile =
+		base.profiles?.[effectiveName] ??
+		base.profiles?.[baseName] ??
+		base.profiles?.[agentName];
 
 	if (!builtIn && !userProfile) {
 		return base;
