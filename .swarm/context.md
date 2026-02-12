@@ -148,16 +148,151 @@ OUTPUT: VERDICT + RISK + ISSUES
 - Budget warnings at 70% and 90% thresholds (configurable)
 - Different agents need different context: coder needs code, reviewer needs code + requirements, architect needs everything
 
+## v5.1.x Roadmap (Headroom-Inspired)
+
+### Overview
+Three releases incorporating high-value ideas from Headroom (context optimization platform) without adopting its Python/proxy stack.
+
+| Version | Theme | Key Feature | Risk |
+|---------|-------|-------------|------|
+| **5.1.0** | Smarter Injection | Score-based context ranking under token budget | Low |
+| **5.1.1** | Measure to Improve | `/swarm benchmark` command + CI fitness gate | Low |
+| **5.1.2** | Handle the Big Stuff | Reversible summaries for oversized tool outputs | Medium |
+
+### Non-Goals
+- No proxy server (Headroom's core is a Python proxy)
+- No ML compression models (LLMLingua, tree-sitter compressors)
+- No framework adapters (LangChain/Agno style wrappers)
+
+### v5.1.0 Decisions (Planned)
+- **Scoring is opt-in**: `context_budget.scoring.enabled: false` by default for safe rollout
+- **Deterministic ranking**: stable sort by score → priority → id, no randomness
+- **Backward compatibility**: disabled mode must produce byte-identical output to current behavior
+- **Bounded weights**: all weights 0-5 range, clamped at schema level
+- **Pure scoring module**: no I/O, no side effects, testable in isolation
+- **Rule-based is correct for curated candidates**: Context items are phase, tasks, decisions, evidence — not arbitrary text. Semantic similarity solves finding needles in haystacks, which we don't have.
+- **Semantic phase gated on observed need**: If rule-based handles 90%+ of real workloads, semantic layer becomes complexity for its own sake. Gate on evidence, not version number.
+- **Dependency proximity signal**: Context from task dependencies scores higher. Formula: `weight / (1 + depth)` decays with graph distance.
+- **Decision recency bumped to 1.5**: Stale decisions that agent contradicts are primary source of swarm incoherence. Was 1.0, too low.
+- **Decision decay configurable**: Exponential (default) or linear, with `half_life_hours` for exponential mode.
+- **Per-content-type token estimation**: Code is denser than prose. Ratios: prose 0.25, code 0.40, markdown 0.30, json 0.35.
+- **Compaction guidance rejected (Option 4)**: Architecturally fragile — couples to opaque beta provider behavior. Avoid.
+- **Mem0-style memory rejected (Option 5)**: Different feature (cross-session memory), should be separate subsystem, not injection enhancement.
+
+#### Scoring Candidate Classes
+1. **Current phase summary** — weight: `phase` (1.0)
+2. **Current task** — weight: `current_task` (2.0) — highest priority
+3. **Blocked tasks** — weight: `blocked_task` (1.5) — important context
+4. **Recent reviewer/test failures** — weight: `recent_failure` (2.5) — must preserve
+5. **Recent successes** — weight: `recent_success` (0.5) — lower priority
+6. **Top decisions** — weight: `decision_recency` (1.5) — decays with age (bumped from 1.0)
+7. **Evidence presence** — weight: `evidence_presence` (1.0) — bonus for tasks with evidence
+8. **Dependency proximity** — weight: `dependency_proximity` (1.0) — decays with task graph depth
+
+#### Scoring Formula
+```
+base_score = Σ(weight_i * feature_i)
+# For items with dependency depth:
+adjusted_score = base_score / (1 + dependency_depth)
+# For decisions with age:
+age_factor = 2^(-age_hours / half_life_hours)
+decision_score = decision_recency * age_factor
+```
+- Features normalized to [0, 1]
+- Tie-breaker order: score desc → priority desc → id asc (stable sort)
+
+#### Integration Pattern
+```
+Current:  gather → fixed-priority inject → token budget drop
+New:      gather → build candidates → score/rank → inject highest under budget
+Disabled: exact old path (byte-for-byte unchanged)
+```
+
+#### Token Estimation by Content Type
+```typescript
+const TOKEN_RATIOS = {
+  prose: 0.25,      // ~4 chars per token
+  code: 0.40,       // ~2.5 chars per token (denser)
+  markdown: 0.30,   // ~3.3 chars per token
+  json: 0.35,       // ~2.8 chars per token
+};
+```
+
+### v5.1.1 Decisions (Planned)
+- **Benchmark storage**: `.swarm/benchmarks.json` with schema version, append-only
+- **Metrics MVP**: rejection rate, retry count, tool calls per task, hard-limit hits
+- **CI gate mode**: exit non-zero if thresholds fail, JSON output option
+- **Configurable thresholds**: all gates via config, not hardcoded
+
+### v5.1.2 Decisions (Planned)
+- **No silent data loss**: raw content always recoverable via evidence/artifacts
+- **Size thresholds**: configurable, apply existing path validation
+- **Summary + hint token**: inject compact summary with retrieval reference
+- **Evidence integration**: leverage existing evidence layer for storage/retrieval
+
+---
+
+## v5.1.x Delegation Templates
+
+### Task 1.1 — Schema + Defaults
+```
+mega_coder
+TASK: Add context scoring config schema and defaults
+FILE: src/config/schema.ts
+INPUT: Add optional context_budget.scoring block with: enabled, max_candidates, weights (including dependency_proximity), decision_decay (mode + half_life_hours), token_ratios (per content type). Defaults must preserve old behavior (disabled).
+OUTPUT: Updated schema/default definitions and any required config constants usage
+CONSTRAINT: Do not modify runtime injection logic yet
+```
+
+### Task 1.2 — Scoring Engine
+```
+mega_coder
+TASK: Implement deterministic context scoring utility
+FILE: src/hooks/context-scoring.ts
+INPUT: Build pure scoring/ranking helpers: rankCandidates(candidates, weights, budget) => RankedCandidate[]. Include dependency proximity decay (weight / (1 + depth)), decision decay (exponential/linear), per-content-type token estimation. Stable tie-breaking. Disabled pass-through mode.
+OUTPUT: New scoring module and unit tests for ranking determinism
+CONSTRAINT: Pure function only — no I/O, no side effects, no async. Do not integrate with system enhancer yet.
+```
+
+### Task 1.3 — Hook Integration
+```
+mega_coder
+TASK: Integrate scoring-based candidate ranking into system enhancer
+FILE: src/hooks/system-enhancer.ts
+INPUT: Use scoring utility when context_budget.scoring.enabled=true; otherwise keep exact legacy injection order. Use token_ratios for token estimation based on content type.
+OUTPUT: Updated enhancer logic with budget-aware ranked injection
+CONSTRAINT: Preserve current behavior byte-for-byte when scoring is disabled
+```
+
+### Reviewer Template
+```
+mega_reviewer
+TASK: Review scoring-based context injection changes
+CHECK: correctness, deterministic ordering, backward compatibility when scoring disabled, token budget safety, config validation bounds, dependency proximity formula correctness, decision decay implementation, token ratio application
+OUTPUT: VERDICT + RISK + ISSUES (with exact file/line references)
+CONSTRAINT: Reject if disabled-mode behavior changed
+```
+
+### Test Engineer Template
+```
+mega_test_engineer
+TASK: Generate and run tests for context scoring and enhancer integration
+OUTPUT: New/updated tests + VERDICT: PASS/FAIL with failing test names and root cause
+CONSTRAINT: Include regression tests proving disabled scoring preserves legacy order. Test dependency depth decay. Test decision exponential vs linear decay. Test token ratios differ by content type.
+```
+
+---
+
 ## Agent Activity
 
 | Tool | Calls | Success | Failed | Avg Duration |
 |------|-------|---------|--------|--------------|
-| read | 172 | 172 | 0 | 244ms |
-| bash | 94 | 94 | 0 | 1937ms |
-| edit | 75 | 75 | 0 | 1007ms |
-| task | 29 | 29 | 0 | 136658ms |
-| grep | 24 | 24 | 0 | 59ms |
-| todowrite | 21 | 21 | 0 | 12ms |
-| glob | 13 | 13 | 0 | 25ms |
-| write | 9 | 9 | 0 | 531ms |
-| apply_patch | 4 | 4 | 0 | 4ms |
+| read | 212 | 212 | 0 | 4ms |
+| bash | 163 | 163 | 0 | 838ms |
+| edit | 97 | 97 | 0 | 576ms |
+| glob | 47 | 47 | 0 | 587ms |
+| grep | 23 | 23 | 0 | 250ms |
+| write | 20 | 20 | 0 | 7387ms |
+| task | 18 | 18 | 0 | 294732ms |
+| google_search | 1 | 1 | 0 | 99ms |
+| memory_set | 1 | 1 | 0 | 6ms |

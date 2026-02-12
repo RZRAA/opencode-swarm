@@ -13696,7 +13696,8 @@ function resolveGuardrailsConfig(base, agentName) {
     return base;
   }
   const baseName = stripKnownSwarmPrefix(agentName);
-  const effectiveName = baseName === "unknown" ? ORCHESTRATOR_NAME : baseName;
+  const builtInLookup = DEFAULT_AGENT_PROFILES[baseName];
+  const effectiveName = builtInLookup ? baseName : ORCHESTRATOR_NAME;
   const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];
   const userProfile = base.profiles?.[effectiveName] ?? base.profiles?.[baseName] ?? base.profiles?.[agentName];
   if (!builtIn && !userProfile) {

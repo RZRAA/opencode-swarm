@@ -209,9 +209,10 @@ export function resolveGuardrailsConfig(
 	// Strip known swarm prefixes to get the base agent name
 	const baseName = stripKnownSwarmPrefix(agentName);
 
-	// Belt-and-suspenders: treat 'unknown' as the orchestrator (architect)
-	// This makes resolution resilient even if the race recurs through a different code path
-	const effectiveName = baseName === 'unknown' ? ORCHESTRATOR_NAME : baseName;
+	// Belt-and-suspenders: if no built-in profile matches, fall back to orchestrator
+	// so unknown agent names never use base defaults
+	const builtInLookup = DEFAULT_AGENT_PROFILES[baseName];
+	const effectiveName = builtInLookup ? baseName : ORCHESTRATOR_NAME;
 
 	// Layer 1: Apply built-in defaults for the agent (using effective name)
 	const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];

@@ -74,12 +74,20 @@ describe('guardrails circuit breaker', () => {
 		});
 
 		it('warning issued at threshold', async () => {
-			const config = defaultConfig({ max_tool_calls: 10, warning_threshold: 0.5 });
+			const config = defaultConfig({
+				max_tool_calls: 10,
+				warning_threshold: 0.5,
+				profiles: { explorer: { max_tool_calls: 10, warning_threshold: 0.5 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'explorer');
 
+			// Use different args to avoid repetition detection
 			for (let i = 0; i < 5; i++) {
-				await hooks.toolBefore(makeInput('test-session'), makeOutput());
+				await hooks.toolBefore(
+					makeInput('test-session', 'read', `call-${i}`),
+					makeOutput({ filePath: `/test${i}.ts` }),
+				);
 			}
 
 			const session = getAgentSession('test-session');
@@ -87,9 +95,12 @@ describe('guardrails circuit breaker', () => {
 		});
 
 		it('throws at hard limit', async () => {
-			const config = defaultConfig({ max_tool_calls: 5 });
+			const config = defaultConfig({
+				max_tool_calls: 5,
+				profiles: { coder: { max_tool_calls: 5 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'coder');
 
 			// First 4 should not throw (0-4 increments, but limit is 5)
 			for (let i = 0; i < 4; i++) {
@@ -102,9 +113,12 @@ describe('guardrails circuit breaker', () => {
 		});
 
 		it('blocks all subsequent calls after hard limit', async () => {
-			const config = defaultConfig({ max_tool_calls: 3 });
+			const config = defaultConfig({
+				max_tool_calls: 3,
+				profiles: { coder: { max_tool_calls: 3 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'coder');
 
 			// First 2 should not throw
 			for (let i = 0; i < 2; i++) {
@@ -123,9 +137,12 @@ describe('guardrails circuit breaker', () => {
 
 	describe('toolBefore - duration', () => {
 		it('throws at duration limit', async () => {
-			const config = defaultConfig({ max_duration_minutes: 30 });
+			const config = defaultConfig({
+				max_duration_minutes: 30,
+				profiles: { coder: { max_duration_minutes: 30 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'coder');
 
 			// Manually set startTime to 31 minutes ago
 			const session = getAgentSession('test-session');
@@ -138,9 +155,13 @@ describe('guardrails circuit breaker', () => {
 		});
 
 		it('warning at duration threshold', async () => {
-			const config = defaultConfig({ max_duration_minutes: 30, warning_threshold: 0.5 });
+			const config = defaultConfig({
+				max_duration_minutes: 30,
+				warning_threshold: 0.5,
+				profiles: { coder: { max_duration_minutes: 30, warning_threshold: 0.5 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'coder');
 
 			// Manually set startTime to 16 minutes ago (above 15 min threshold)
 			const session = getAgentSession('test-session');
@@ -199,9 +220,13 @@ describe('guardrails circuit breaker', () => {
 		});
 
 		it('warning at repetition threshold', async () => {
-			const config = defaultConfig({ max_repetitions: 10, warning_threshold: 0.5 });
+			const config = defaultConfig({
+				max_repetitions: 10,
+				warning_threshold: 0.5,
+				profiles: { coder: { max_repetitions: 10, warning_threshold: 0.5 } },
+			});
 			const hooks = createGuardrailsHooks(config);
-			startAgentSession('test-session', 'custom_agent');
+			startAgentSession('test-session', 'coder');
 			const args = { filePath: '/test.ts' };
 
 			// Make 5 identical calls (threshold is 5)
@@ -458,43 +483,38 @@ describe('guardrails circuit breaker', () => {
 	});
 
 		describe('per-agent profiles', () => {
-		it('agent with profile gets higher tool call limit', async () => {
-			const config = defaultConfig({
-				max_tool_calls: 10,
-				profiles: {
-					coder: { max_tool_calls: 20 },
-				},
-			});
-			const hooks = createGuardrailsHooks(config);
-
-			// Create session with 'coder' agent - user profile override gives limit of 20
-			startAgentSession('coder-session', 'coder');
-
-			// Make 10 calls - should NOT throw (coder limit is 20 from user profile)
-			for (let i = 0; i < 10; i++) {
-				await hooks.toolBefore(
-					makeInput('coder-session', `tool-${i}`, `call-${i}`),
-					makeOutput({ arg: i }),
-				);
-			}
-			// No error thrown - coder's limit of 20 not reached
-
-			// But a custom agent session would throw at 10 (uses base limit)
-			startAgentSession('default-session', 'custom_agent');
-			for (let i = 0; i < 9; i++) {
-				await hooks.toolBefore(
-					makeInput('default-session', `tool-${i}`, `call-d-${i}`),
-					makeOutput({ arg: i }),
-				);
-			}
-			// 10th call should throw for unknown (base limit is 10)
-			await expect(
-				hooks.toolBefore(
-					makeInput('default-session', 'tool-10', 'call-d-10'),
-					makeOutput({ arg: 10 }),
-				),
-			).rejects.toThrow('LIMIT REACHED');
+	it('agent with profile gets higher tool call limit', async () => {
+		const config = defaultConfig({
+			max_tool_calls: 10,
+			profiles: {
+				coder: { max_tool_calls: 20 },
+			},
 		});
+		const hooks = createGuardrailsHooks(config);
+
+		// Create session with 'coder' agent - user profile override gives limit of 20
+		startAgentSession('coder-session', 'coder');
+
+		// Make 10 calls - should NOT throw (coder limit is 20 from user profile)
+		for (let i = 0; i < 10; i++) {
+			await hooks.toolBefore(
+				makeInput('coder-session', `tool-${i}`, `call-${i}`),
+				makeOutput({ arg: i }),
+			);
+		}
+		// No error thrown - coder's limit of 20 not reached
+
+		// Unknown agents now get architect defaults (unlimited) instead of base limits
+		startAgentSession('default-session', 'custom_agent');
+		// Make 15 calls - should NOT throw (unknown agents get architect unlimited defaults)
+		for (let i = 0; i < 15; i++) {
+			await hooks.toolBefore(
+				makeInput('default-session', `tool-${i}`, `call-d-${i}`),
+				makeOutput({ arg: i }),
+			);
+		}
+		// No error thrown - unknown agents now use architect defaults (unlimited)
+	});
 
 		it('agent with user profile override uses custom limits', async () => {
 			const config = defaultConfig({
@@ -526,36 +546,29 @@ describe('guardrails circuit breaker', () => {
 			).rejects.toThrow('LIMIT REACHED');
 		});
 
-		it('custom agent (auto-created session) uses base config', async () => {
-			const config = defaultConfig({
-				max_tool_calls: 5,
-				profiles: {
-					coder: { max_tool_calls: 100 },
-					explorer: { max_tool_calls: 50 },
-				},
-			});
-			const hooks = createGuardrailsHooks(config);
-
-			// Create a session with a custom agent name (not a built-in profile)
-			// This agent will use base config limits
-			startAgentSession('unknown-session', 'custom_agent');
-
-			// Make 4 calls - should be fine
-			for (let i = 0; i < 4; i++) {
-				await hooks.toolBefore(
-					makeInput('unknown-session', `tool-${i}`, `call-${i}`),
-					makeOutput({ arg: i }),
-				);
-			}
-
-			// 5th call should throw (custom agent has no profile, uses base limit of 5)
-			await expect(
-				hooks.toolBefore(
-					makeInput('unknown-session', 'tool-5', 'call-5'),
-					makeOutput({ arg: 5 }),
-				),
-			).rejects.toThrow('LIMIT REACHED');
+	it('custom agent (auto-created session) uses architect defaults', async () => {
+		const config = defaultConfig({
+			max_tool_calls: 5,
+			profiles: {
+				coder: { max_tool_calls: 100 },
+				explorer: { max_tool_calls: 50 },
+			},
 		});
+		const hooks = createGuardrailsHooks(config);
+
+		// Create a session with a custom agent name (not a built-in profile)
+		// Unknown agents now get architect defaults (unlimited limits)
+		startAgentSession('unknown-session', 'custom_agent');
+
+		// Make 10 calls - should NOT throw (unknown agents get architect unlimited defaults)
+		for (let i = 0; i < 10; i++) {
+			await hooks.toolBefore(
+				makeInput('unknown-session', `tool-${i}`, `call-${i}`),
+				makeOutput({ arg: i }),
+			);
+		}
+		// No error thrown - unknown agents now use architect defaults (unlimited)
+	});
 
 		it('agent with profile gets different warning threshold', async () => {
 			const config = defaultConfig({

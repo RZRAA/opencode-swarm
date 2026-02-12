@@ -202,9 +202,12 @@ describe('resolveGuardrailsConfig', () => {
 		expect(result).toBe(baseConfig);
 	});
 
-	it('returns base when agentName not in built-in profiles', () => {
+	it('returns architect defaults when agentName not in built-in profiles', () => {
 		const result = resolveGuardrailsConfig(baseConfig, 'unknown-agent');
-		expect(result).toBe(baseConfig);
+		expect(result.max_tool_calls).toBe(0); // Unlimited (architect default)
+		expect(result.max_duration_minutes).toBe(0); // Unlimited (architect default)
+		expect(result.max_consecutive_errors).toBe(8); // Architect default
+		expect(result.warning_threshold).toBe(0.75); // Architect default
 	});
 
 	it('merges single field override (coder gets max_tool_calls=20 from profile)', () => {
