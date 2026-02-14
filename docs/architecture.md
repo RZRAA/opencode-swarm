@@ -205,7 +205,7 @@ project/
 │   ├── state.ts           # Shared swarm state singleton (zero imports)
 │   ├── agents/            # Agent definitions and factory
 │   ├── config/            # Schema, constants, loader
-│   ├── commands/          # Slash command handlers (10 commands)
+│   ├── commands/          # Slash command handlers (12 commands)
 │   │   ├── index.ts       # Factory + dispatcher (createSwarmCommandHandler)
 │   │   ├── status.ts      # /swarm status
 │   │   ├── plan.ts        # /swarm plan [N]
@@ -230,7 +230,7 @@ project/
 │       ├── index.ts       # Barrel exports
 │       └── manager.ts     # CRUD: save/load/list/delete/archive evidence
 │
-├── tests/unit/            # 876 tests across 39 files (bun test)
+├── tests/unit/            # 1027 tests across 44 files (bun test)
 │   ├── agents/            # creation (64), factory (20)
 │   ├── config/            # constants (14), schema (35), loader (17), plan-schema (40),
 │   │                      # evidence-schema (23), evidence-config (8)
@@ -413,7 +413,7 @@ Persistent `.swarm/` files provide:
 
 ## Hooks System
 
-The hooks system is the foundation of v4.3.0+. All features are built as hook handlers registered on OpenCode's Plugin API.
+The hooks system is the foundation of v5.1.x+. All features are built as hook handlers registered on OpenCode's Plugin API.
 
 ### Core Utilities
 
@@ -515,7 +515,7 @@ Configurable via `evidence` config:
 
 ## Slash Commands
 
-Ten commands registered under `/swarm`:
+Twelve commands registered under `/swarm`:
 
 | Command | Description |
 |---------|-------------|
@@ -530,6 +530,8 @@ Ten commands registered under `/swarm`:
 | `/swarm reset --confirm` | Clear swarm state files (with safety gate) |
 | `/swarm evidence [task]` | View evidence bundles for a task or list all tasks with evidence |
 | `/swarm archive [--dry-run]` | Archive old evidence bundles with retention policy |
+| `/swarm benchmark` | Run performance benchmarks and display metrics |
+| `/swarm retrieve [id]` | Retrieve auto-summarized tool outputs by ID |
 
 ### Implementation
 

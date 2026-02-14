@@ -16738,6 +16738,8 @@ function createDelegationTrackerHook(config2) {
       if (session2) {
         session2.delegationActive = false;
       }
+      swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+      ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
       return;
     }
     const agentName = input.agent;
@@ -16775,6 +16777,13 @@ function createGuardrailsHooks(config2) {
       const strippedAgent = rawActiveAgent ? stripKnownSwarmPrefix(rawActiveAgent) : undefined;
       if (strippedAgent === ORCHESTRATOR_NAME) {
         return;
+      }
+      const existingSession = swarmState.agentSessions.get(input.sessionID);
+      if (existingSession) {
+        const sessionAgent = stripKnownSwarmPrefix(existingSession.agentName);
+        if (sessionAgent === ORCHESTRATOR_NAME) {
+          return;
+        }
       }
       const agentName = swarmState.activeAgent.get(input.sessionID);
       const session = ensureAgentSession(input.sessionID, agentName);

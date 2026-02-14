@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-5.1.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
-  <img src="https://img.shields.io/badge/agents-8-orange" alt="Agents">
-  <img src="https://img.shields.io/badge/tests-876-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/agents-7-orange" alt="Agents">
+  <img src="https://img.shields.io/badge/tests-1027-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">🐝 OpenCode Swarm</h1>
@@ -341,7 +341,7 @@ bunx opencode-swarm uninstall --clean
 - **Context injection budget** — `max_injection_tokens` config controls how much context is injected into system prompts. Priority-ordered: phase → task → decisions → agent context. Lower-priority items dropped when budget exhausted.
 - **Enhanced `/swarm agents`** — Agent count summary, `⚡ custom limits` indicator for profiled agents, guardrail profiles section.
 - **Packaging smoke tests** — CI-safe `dist/` validation (8 tests).
-- **208 new tests** — 876 total tests across 39 files (up from 668 in v4.6.0).
+- **151 new tests** — 1027 total tests across 44 files (up from 876 in v4.6.0).
 
 ### v4.6.0 — Agent Guardrails
 - **Circuit breaker** — Two-layer protection against runaway agents. Soft warning at 50% of limits, hard block at 100%. Prevents infinite loops and runaway API costs.
@@ -422,6 +422,8 @@ All features are opt-in via configuration. See [Installation Guide](docs/install
 | `/swarm reset --confirm` | Clear swarm state files (with safety gate) |
 | `/swarm evidence [task]` | View evidence bundles for a task or all tasks |
 | `/swarm archive [--dry-run]` | Archive old evidence bundles with retention policy |
+| `/swarm benchmark` | Run performance benchmarks and display metrics |
+| `/swarm retrieve [id]` | Retrieve auto-summarized tool outputs by ID |
 
 ---
 
@@ -508,9 +510,7 @@ Override limits for specific agents that need more (or less) room:
 
 Profiles merge with base config — only specified fields are overridden.
 
-> **Built-in Architect Defaults:** The architect agent automatically receives higher limits
-> (600 tool calls, 90 min duration, 8 consecutive errors, 0.7 warning threshold) without any
-> configuration. These built-in defaults can be overridden via a `profiles.architect` entry.
+> **Architect is exempt/unlimited by default:** The architect agent has no guardrail limits by default. To override, add a `profiles.architect` entry in your guardrails config.
 
 ### Disable Guardrails
 
@@ -564,7 +564,7 @@ bun test
 bun test tests/unit/config/schema.test.ts
 ```
 
-876 unit tests across 39 files covering config, tools, agents, hooks, commands, state, guardrails, evidence, and plan schemas. Uses Bun's built-in test runner — zero additional test dependencies.
+1027 unit tests across 44 files covering config, tools, agents, hooks, commands, state, guardrails, evidence, and plan schemas. Uses Bun's built-in test runner — zero additional test dependencies.
 
 ## Troubleshooting
 

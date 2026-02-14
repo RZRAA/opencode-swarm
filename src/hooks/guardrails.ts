@@ -56,12 +56,25 @@ export function createGuardrailsHooks(config: GuardrailsConfig): {
 		toolBefore: async (input, output) => {
 			// Architect is structurally exempt from guardrails — early return
 			// This prevents false circuit breaker trips from complex delegation state resolution
+			//
+			// Check 1: Use activeAgent map (may be stale up to 60s when delegation ends)
 			const rawActiveAgent = swarmState.activeAgent.get(input.sessionID);
 			const strippedAgent = rawActiveAgent
 				? stripKnownSwarmPrefix(rawActiveAgent)
 				: undefined;
 			if (strippedAgent === ORCHESTRATOR_NAME) {
 				return;
+			}
+
+			// Check 2: Fallback to session state if activeAgent is missing/undefined
+			// This handles cases where tool.execute.before fires before chat.message updates activeAgent,
+			// or when delegation just ended and activeAgent is transitioning
+			const existingSession = swarmState.agentSessions.get(input.sessionID);
+			if (existingSession) {
+				const sessionAgent = stripKnownSwarmPrefix(existingSession.agentName);
+				if (sessionAgent === ORCHESTRATOR_NAME) {
+					return;
+				}
 			}
 
 			// Ensure session exists — uses activeAgent map as fallback for agent name

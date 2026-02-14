@@ -5,6 +5,7 @@
  * Updates the active agent map and optionally logs delegation chain entries.
  */
 
+import { ORCHESTRATOR_NAME } from '../config/constants';
 import type { PluginConfig } from '../config/schema';
 import type { DelegationEntry } from '../state';
 import { ensureAgentSession, swarmState } from '../state';
@@ -22,13 +23,18 @@ export function createDelegationTrackerHook(
 		input: { sessionID: string; agent?: string },
 		_output: Record<string, unknown>,
 	): Promise<void> => {
-		// If no agent is specified, only reset delegationActive on existing session
-		// and return without updating activeAgent or creating a new session
+		// If no agent is specified, the architect is taking over (delegation ended)
+		// Update activeAgent to architect and reset session startTime so duration limit doesn't apply
 		if (!input.agent || input.agent === '') {
 			const session = swarmState.agentSessions.get(input.sessionID);
 			if (session) {
 				session.delegationActive = false;
 			}
+			// Set activeAgent to architect to ensure duration exemption applies
+			// This fixes the regression where architect inherits subagent startTime
+			swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+			// Reset session with architect name to reset startTime for accurate duration tracking
+			ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
 			return;
 		}
 

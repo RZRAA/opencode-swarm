@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.4] - 2026-02-14
+### Fixed
+- **Architect circuit breaker regression** — Ensured delegation end resets active agent to architect and added fallback exemption check so architects never inherit subagent duration limits.
+- **Docs accuracy refresh** — Updated badges, command lists, guardrail notes, and test counts for current v5.1.x state.
+
+### Tests
+- Added regression test for architect duration exemption after delegation ends
+
 ## [5.1.3] - 2026-02-14
 ### Fixed
 - **Guardrails circuit breaker architect exemption regression** — Fixed stale delegation timeout and added second exemption check to prevent false circuit breaker trips for the architect agent during complex orchestration flows.

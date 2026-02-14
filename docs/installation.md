@@ -573,22 +573,23 @@ Control agent execution limits:
 | `warning_threshold` | number | `0.5` | Inject warning at this percentage of any limit |
 | `profiles` | object | — | Per-agent overrides. Keys are agent names, values override base settings. |
 
-**Built-in Architect Defaults:** The architect agent automatically receives higher limits without configuration:
+**Architect is exempt/unlimited by default:** The architect agent has no guardrail limits by default. To override, add a `profiles.architect` entry:
 
-| Setting | Base Default | Architect Default |
-|---------|-------------|-------------------|
-| `max_tool_calls` | 200 | 600 |
-| `max_duration_minutes` | 30 | 90 |
-| `max_consecutive_errors` | 5 | 8 |
-| `warning_threshold` | 0.5 | 0.7 |
-
-These built-in defaults are applied automatically. To customize, add a `profiles.architect` entry — user-defined profiles always take precedence.
+```jsonc
+{
+  "guardrails": {
+    "profiles": {
+      "architect": { "max_tool_calls": 500, "max_duration_minutes": 60 }
+    }
+  }
+}
+```
 
 ---
 
 ## Slash Commands
 
-Ten commands are available under `/swarm`:
+Twelve commands are available under `/swarm`:
 
 ### `/swarm status`
 
@@ -657,3 +658,11 @@ View evidence bundles for a specific task, or list all tasks with evidence when 
 ### `/swarm archive [--dry-run]`
 
 Archive old evidence bundles based on the retention policy. Use `--dry-run` to preview what would be archived.
+
+### `/swarm benchmark`
+
+Run performance benchmarks and display metrics. Tracks tool call rates, delegation chains, and evidence-derived pass rates.
+
+### `/swarm retrieve [id]`
+
+Retrieve auto-summarized tool outputs by ID. When tool outputs are too large, they are summarized automatically — use this command to retrieve the full content by ID.

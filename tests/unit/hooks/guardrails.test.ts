@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { createGuardrailsHooks, hashArgs } from '../../../src/hooks/guardrails';
-import { resetSwarmState, swarmState, startAgentSession, getAgentSession } from '../../../src/state';
+import { resetSwarmState, swarmState, startAgentSession, getAgentSession, ensureAgentSession } from '../../../src/state';
 import type { GuardrailsConfig } from '../../../src/config/schema';
 
 	function defaultConfig(overrides?: Partial<GuardrailsConfig>): GuardrailsConfig {
@@ -1200,6 +1200,50 @@ describe('guardrails circuit breaker', () => {
 
 			// Verify no error thrown
 			expect(true).toBe(true);
+		});
+
+		it('subagent duration >30m then delegation ends should not block architect tool call', async () => {
+			// Regression test: when subagent session exceeds 30 minutes, then delegation ends
+			// (input.agent missing), architect tool call should NOT be blocked
+			const config = defaultConfig({
+				max_duration_minutes: 30,
+				profiles: { coder: { max_duration_minutes: 30 } },
+			});
+			const hooks = createGuardrailsHooks(config);
+
+			// Step 1: Start as subagent (coder) - simulates a subagent running for >30 minutes
+			swarmState.activeAgent.set('delegation-ended-session', 'coder');
+			startAgentSession('delegation-ended-session', 'coder');
+
+			// Manually set startTime to 31 minutes ago (exceeds duration limit)
+			const coderSession = getAgentSession('delegation-ended-session');
+			if (coderSession) {
+				coderSession.startTime = Date.now() - 31 * 60000;
+				coderSession.lastSuccessTime = Date.now() - 31 * 60000;
+			}
+
+			// Verify coder session would throw due to duration limit
+			await expect(
+				hooks.toolBefore(makeInput('delegation-ended-session', 'read', 'call-1'), makeOutput()),
+			).rejects.toThrow('Duration exhausted');
+
+			// Step 2: Delegation ends - simulate input.agent missing/empty
+			// This is what happens in delegation-tracker.ts when input.agent is empty
+			// It calls ensureAgentSession with 'architect', which resets startTime to now
+			ensureAgentSession('delegation-ended-session', 'architect');
+
+			// Step 3: Verify architect tool call does NOT throw (should be exempt)
+			// This should NOT throw because:
+			// 1. ensureAgentSession reset startTime to now (duration tracking starts fresh)
+			// 2. Architect has unlimited duration (max_duration_minutes: 0 from defaults)
+			await hooks.toolBefore(
+				makeInput('delegation-ended-session', 'read', 'call-2'),
+				makeOutput(),
+			);
+
+			// Verify no error was thrown - architect is exempt
+			const session = getAgentSession('delegation-ended-session');
+			expect(session?.agentName).toBe('architect');
 		});
 	});
 });
