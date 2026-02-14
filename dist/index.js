@@ -13623,6 +13623,13 @@ var EvidenceConfigSchema = exports_external.object({
   max_bundles: exports_external.number().min(10).max(1e4).default(1000),
   auto_archive: exports_external.boolean().default(false)
 });
+var SummaryConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  threshold_bytes: exports_external.number().min(1024).max(1048576).default(20480),
+  max_summary_chars: exports_external.number().min(100).max(5000).default(1000),
+  max_stored_bytes: exports_external.number().min(10240).max(104857600).default(10485760),
+  retention_days: exports_external.number().min(1).max(365).default(7)
+});
 var GuardrailsProfileSchema = exports_external.object({
   max_tool_calls: exports_external.number().min(0).max(1000).optional(),
   max_duration_minutes: exports_external.number().min(0).max(480).optional(),
@@ -13716,7 +13723,8 @@ var PluginConfigSchema = exports_external.object({
   hooks: HooksConfigSchema.optional(),
   context_budget: ContextBudgetConfigSchema.optional(),
   guardrails: GuardrailsConfigSchema.optional(),
-  evidence: EvidenceConfigSchema.optional()
+  evidence: EvidenceConfigSchema.optional(),
+  summaries: SummaryConfigSchema.optional()
 });
 
 // src/config/loader.ts
@@ -16000,6 +16008,17 @@ async function handleResetCommand(directory, args) {
       results.push(`- \u274C Failed to delete ${filename}`);
     }
   }
+  try {
+    const summariesPath = validateSwarmPath(directory, "summaries");
+    if (fs2.existsSync(summariesPath)) {
+      fs2.rmSync(summariesPath, { recursive: true, force: true });
+      results.push("- \u2705 Deleted summaries/ directory");
+    } else {
+      results.push("- \u23ED\uFE0F summaries/ not found (skipped)");
+    }
+  } catch {
+    results.push("- \u274C Failed to delete summaries/");
+  }
   return [
     "## Swarm Reset Complete",
     "",
@@ -16008,6 +16027,112 @@ async function handleResetCommand(directory, args) {
     "Swarm state has been cleared. Start fresh with a new plan."
   ].join(`
 `);
+}
+
+// src/summaries/manager.ts
+import { mkdirSync as mkdirSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync3, statSync as statSync3 } from "fs";
+import * as path6 from "path";
+var SUMMARY_ID_REGEX = /^S\d+$/;
+function sanitizeSummaryId(id) {
+  if (!id || id.length === 0) {
+    throw new Error("Invalid summary ID: empty string");
+  }
+  if (/\0/.test(id)) {
+    throw new Error("Invalid summary ID: contains null bytes");
+  }
+  for (let i = 0;i < id.length; i++) {
+    if (id.charCodeAt(i) < 32) {
+      throw new Error("Invalid summary ID: contains control characters");
+    }
+  }
+  if (id.includes("..") || id.includes("../") || id.includes("..\\")) {
+    throw new Error("Invalid summary ID: path traversal detected");
+  }
+  if (!SUMMARY_ID_REGEX.test(id)) {
+    throw new Error(`Invalid summary ID: must match pattern ^S\\d+$, got "${id}"`);
+  }
+  return id;
+}
+async function storeSummary(directory, id, fullOutput, summaryText, maxStoredBytes) {
+  const sanitizedId = sanitizeSummaryId(id);
+  const outputBytes = Buffer.byteLength(fullOutput, "utf8");
+  if (outputBytes > maxStoredBytes) {
+    throw new Error(`Summary fullOutput size (${outputBytes} bytes) exceeds maximum (${maxStoredBytes} bytes)`);
+  }
+  const relativePath = path6.join("summaries", `${sanitizedId}.json`);
+  const summaryPath = validateSwarmPath(directory, relativePath);
+  const summaryDir = path6.dirname(summaryPath);
+  const entry = {
+    id: sanitizedId,
+    summaryText,
+    fullOutput,
+    timestamp: Date.now(),
+    originalBytes: outputBytes
+  };
+  const entryJson = JSON.stringify(entry);
+  mkdirSync2(summaryDir, { recursive: true });
+  const tempPath = path6.join(summaryDir, `${sanitizedId}.json.tmp.${Date.now()}.${process.pid}`);
+  try {
+    await Bun.write(tempPath, entryJson);
+    renameSync2(tempPath, summaryPath);
+  } catch (error49) {
+    try {
+      rmSync3(tempPath, { force: true });
+    } catch {}
+    throw error49;
+  }
+}
+async function loadFullOutput(directory, id) {
+  const sanitizedId = sanitizeSummaryId(id);
+  const relativePath = path6.join("summaries", `${sanitizedId}.json`);
+  validateSwarmPath(directory, relativePath);
+  const content = await readSwarmFileAsync(directory, relativePath);
+  if (content === null) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(content);
+    if (typeof parsed.fullOutput === "string") {
+      return parsed.fullOutput;
+    }
+    warn(`Summary entry ${sanitizedId} missing valid fullOutput field`);
+    return null;
+  } catch (error49) {
+    warn(`Summary entry validation failed for ${sanitizedId}: ${error49 instanceof Error ? error49.message : String(error49)}`);
+    return null;
+  }
+}
+
+// src/commands/retrieve.ts
+async function handleRetrieveCommand(directory, args) {
+  const summaryId = args[0];
+  if (!summaryId) {
+    return [
+      "## Swarm Retrieve",
+      "",
+      "Usage: `/swarm retrieve <id>`",
+      "",
+      "Example: `/swarm retrieve S1`",
+      "",
+      "Retrieves the full output that was replaced by a summary."
+    ].join(`
+`);
+  }
+  try {
+    const fullOutput = await loadFullOutput(directory, summaryId);
+    if (fullOutput === null) {
+      return `## Summary Not Found
+
+No stored output found for ID \`${summaryId}\`.
+
+Use a valid summary ID (e.g., S1, S2, S3).`;
+    }
+    return fullOutput;
+  } catch (error49) {
+    return `## Retrieve Failed
+
+${error49 instanceof Error ? error49.message : String(error49)}`;
+  }
 }
 
 // src/hooks/extractors.ts
@@ -16260,7 +16385,8 @@ var HELP_TEXT = [
   "- `/swarm diagnose` \u2014 Run health check on swarm state",
   "- `/swarm benchmark [--cumulative] [--ci-gate]` \u2014 Show performance metrics",
   "- `/swarm export` \u2014 Export plan and context as JSON",
-  "- `/swarm reset --confirm` \u2014 Clear swarm state files"
+  "- `/swarm reset --confirm` \u2014 Clear swarm state files",
+  "- `/swarm retrieve <id>` \u2014 Retrieve full output from a summary"
 ].join(`
 `);
 function createSwarmCommandHandler(directory, agents) {
@@ -16307,6 +16433,9 @@ function createSwarmCommandHandler(directory, agents) {
         break;
       case "reset":
         text = await handleResetCommand(directory, args);
+        break;
+      case "retrieve":
+        text = await handleRetrieveCommand(directory, args);
         break;
       default:
         text = HELP_TEXT;
@@ -16386,8 +16515,8 @@ async function doFlush(directory) {
     const activitySection = renderActivitySection();
     const updated = replaceOrAppendSection(existing, "## Agent Activity", activitySection);
     const flushedCount = swarmState.pendingEvents;
-    const path6 = `${directory}/.swarm/context.md`;
-    await Bun.write(path6, updated);
+    const path7 = `${directory}/.swarm/context.md`;
+    await Bun.write(path7, updated);
     swarmState.pendingEvents = Math.max(0, swarmState.pendingEvents - flushedCount);
   } catch (error49) {
     warn("Agent activity flush failed:", error49);
@@ -16537,36 +16666,6 @@ function createContextBudgetHandler(config2) {
     }
   };
 }
-// src/hooks/delegation-tracker.ts
-function createDelegationTrackerHook(config2) {
-  return async (input, _output) => {
-    if (!input.agent || input.agent === "") {
-      const session2 = swarmState.agentSessions.get(input.sessionID);
-      if (session2) {
-        session2.delegationActive = false;
-      }
-      return;
-    }
-    const agentName = input.agent;
-    const previousAgent = swarmState.activeAgent.get(input.sessionID);
-    swarmState.activeAgent.set(input.sessionID, agentName);
-    const session = ensureAgentSession(input.sessionID, agentName);
-    session.delegationActive = true;
-    if (config2.hooks?.delegation_tracker === true && previousAgent && previousAgent !== agentName) {
-      const entry = {
-        from: previousAgent,
-        to: agentName,
-        timestamp: Date.now()
-      };
-      if (!swarmState.delegationChains.has(input.sessionID)) {
-        swarmState.delegationChains.set(input.sessionID, []);
-      }
-      const chain = swarmState.delegationChains.get(input.sessionID);
-      chain?.push(entry);
-      swarmState.pendingEvents++;
-    }
-  };
-}
 // src/hooks/delegation-gate.ts
 function createDelegationGateHook(config2) {
   const enabled = config2.hooks?.delegation_gate !== false;
@@ -16631,6 +16730,36 @@ Split into smaller, atomic tasks for better results.]`;
 ${originalText}`;
   };
 }
+// src/hooks/delegation-tracker.ts
+function createDelegationTrackerHook(config2) {
+  return async (input, _output) => {
+    if (!input.agent || input.agent === "") {
+      const session2 = swarmState.agentSessions.get(input.sessionID);
+      if (session2) {
+        session2.delegationActive = false;
+      }
+      return;
+    }
+    const agentName = input.agent;
+    const previousAgent = swarmState.activeAgent.get(input.sessionID);
+    swarmState.activeAgent.set(input.sessionID, agentName);
+    const session = ensureAgentSession(input.sessionID, agentName);
+    session.delegationActive = true;
+    if (config2.hooks?.delegation_tracker === true && previousAgent && previousAgent !== agentName) {
+      const entry = {
+        from: previousAgent,
+        to: agentName,
+        timestamp: Date.now()
+      };
+      if (!swarmState.delegationChains.has(input.sessionID)) {
+        swarmState.delegationChains.set(input.sessionID, []);
+      }
+      const chain = swarmState.delegationChains.get(input.sessionID);
+      chain?.push(entry);
+      swarmState.pendingEvents++;
+    }
+  };
+}
 // src/hooks/guardrails.ts
 function createGuardrailsHooks(config2) {
   if (config2.enabled === false) {
@@ -16649,6 +16778,10 @@ function createGuardrailsHooks(config2) {
       }
       const agentName = swarmState.activeAgent.get(input.sessionID);
       const session = ensureAgentSession(input.sessionID, agentName);
+      const resolvedName = stripKnownSwarmPrefix(session.agentName);
+      if (resolvedName === ORCHESTRATOR_NAME) {
+        return;
+      }
       const agentConfig = resolveGuardrailsConfig(config2, session.agentName);
       if (session.hardLimitHit) {
         throw new Error("\uD83D\uDED1 CIRCUIT BREAKER: Agent blocked. Hard limit was previously triggered. Stop making tool calls and return your progress summary.");
@@ -16977,6 +17110,7 @@ function createSystemEnhancerHook(config2, directory) {
               }
             }
           }
+          tryInject("[SWARM HINT] Large tool outputs may be auto-summarized. Use /swarm retrieve <id> to get the full content if needed.");
           return;
         }
         const userScoringConfig = config2.context_budget?.scoring;
@@ -17101,6 +17235,154 @@ ${activitySection}`;
     return `${contextSummary.substring(0, maxChars - 3)}...`;
   }
   return contextSummary;
+}
+// src/summaries/summarizer.ts
+var HYSTERESIS_FACTOR = 1.25;
+function detectContentType(output, toolName) {
+  const trimmed = output.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return "json";
+    } catch {}
+  }
+  const codeToolNames = ["read", "cat", "grep", "bash"];
+  const lowerToolName = toolName.toLowerCase();
+  const toolSegments = lowerToolName.split(/[.\-_/]/);
+  if (codeToolNames.some((name) => toolSegments.includes(name))) {
+    return "code";
+  }
+  const codePatterns = [
+    "function ",
+    "const ",
+    "import ",
+    "export ",
+    "class ",
+    "def ",
+    "return ",
+    "=>"
+  ];
+  const startsWithShebang = trimmed.startsWith("#!");
+  if (codePatterns.some((pattern) => output.includes(pattern)) || startsWithShebang) {
+    return "code";
+  }
+  const sampleSize = Math.min(1000, output.length);
+  let nonPrintableCount = 0;
+  for (let i = 0;i < sampleSize; i++) {
+    const charCode = output.charCodeAt(i);
+    if (charCode < 32 && charCode !== 9 && charCode !== 10 && charCode !== 13) {
+      nonPrintableCount++;
+    }
+  }
+  if (sampleSize > 0 && nonPrintableCount / sampleSize > 0.1) {
+    return "binary";
+  }
+  return "text";
+}
+function shouldSummarize(output, thresholdBytes) {
+  const byteLength = Buffer.byteLength(output, "utf8");
+  return byteLength >= thresholdBytes * HYSTERESIS_FACTOR;
+}
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB"];
+  let unitIndex = 0;
+  let size = bytes;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  const formatted = unitIndex === 0 ? size.toString() : size.toFixed(1);
+  return `${formatted} ${units[unitIndex]}`;
+}
+function createSummary(output, toolName, summaryId, maxSummaryChars) {
+  const contentType = detectContentType(output, toolName);
+  const lineCount = output.split(`
+`).length;
+  const byteSize = Buffer.byteLength(output, "utf8");
+  const formattedSize = formatBytes(byteSize);
+  const headerLine = `[SUMMARY ${summaryId}] ${formattedSize} | ${contentType} | ${lineCount} lines`;
+  const footerLine = `\u2192 Use /swarm retrieve ${summaryId} for full content`;
+  const overhead = headerLine.length + 1 + footerLine.length + 1;
+  const maxPreviewChars = maxSummaryChars - overhead;
+  let preview;
+  switch (contentType) {
+    case "json": {
+      try {
+        const parsed = JSON.parse(output.trim());
+        if (Array.isArray(parsed)) {
+          preview = `[ ${parsed.length} items ]`;
+        } else if (typeof parsed === "object" && parsed !== null) {
+          const keys = Object.keys(parsed).slice(0, 3);
+          preview = `{ ${keys.join(", ")}${Object.keys(parsed).length > 3 ? ", ..." : ""} }`;
+        } else {
+          const lines = output.split(`
+`).filter((line) => line.trim().length > 0).slice(0, 3);
+          preview = lines.join(`
+`);
+        }
+      } catch {
+        const lines = output.split(`
+`).filter((line) => line.trim().length > 0).slice(0, 3);
+        preview = lines.join(`
+`);
+      }
+      break;
+    }
+    case "code": {
+      const lines = output.split(`
+`).filter((line) => line.trim().length > 0).slice(0, 5);
+      preview = lines.join(`
+`);
+      break;
+    }
+    case "text": {
+      const lines = output.split(`
+`).filter((line) => line.trim().length > 0).slice(0, 5);
+      preview = lines.join(`
+`);
+      break;
+    }
+    case "binary": {
+      preview = `[Binary content - ${formattedSize}]`;
+      break;
+    }
+    default: {
+      const lines = output.split(`
+`).filter((line) => line.trim().length > 0).slice(0, 5);
+      preview = lines.join(`
+`);
+    }
+  }
+  if (preview.length > maxPreviewChars) {
+    preview = preview.substring(0, maxPreviewChars - 3) + "...";
+  }
+  return `${headerLine}
+${preview}
+${footerLine}`;
+}
+
+// src/hooks/tool-summarizer.ts
+var nextSummaryId = 1;
+function createToolSummarizerHook(config2, directory) {
+  if (config2.enabled === false) {
+    return async () => {};
+  }
+  return async (input, output) => {
+    if (typeof output.output !== "string" || output.output.length === 0) {
+      return;
+    }
+    if (!shouldSummarize(output.output, config2.threshold_bytes)) {
+      return;
+    }
+    const summaryId = `S${nextSummaryId++}`;
+    const summaryText = createSummary(output.output, input.tool, summaryId, config2.max_summary_chars);
+    try {
+      await storeSummary(directory, summaryId, output.output, summaryText, config2.max_stored_bytes);
+      output.output = summaryText;
+    } catch (error49) {
+      warn(`Tool output summarization failed for ${summaryId}: ${error49 instanceof Error ? error49.message : String(error49)}`);
+    }
+  };
 }
 // node_modules/@opencode-ai/plugin/node_modules/zod/v4/classic/external.js
 var exports_external2 = {};
@@ -17831,10 +18113,10 @@ function mergeDefs2(...defs) {
 function cloneDef2(schema) {
   return mergeDefs2(schema._zod.def);
 }
-function getElementAtPath2(obj, path6) {
-  if (!path6)
+function getElementAtPath2(obj, path7) {
+  if (!path7)
     return obj;
-  return path6.reduce((acc, key) => acc?.[key], obj);
+  return path7.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject2(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -18193,11 +18475,11 @@ function aborted2(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues2(path6, issues) {
+function prefixIssues2(path7, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path6);
+    iss.path.unshift(path7);
     return iss;
   });
 }
@@ -18365,7 +18647,7 @@ function treeifyError2(error49, _mapper) {
     return issue3.message;
   };
   const result = { errors: [] };
-  const processError = (error50, path6 = []) => {
+  const processError = (error50, path7 = []) => {
     var _a2, _b;
     for (const issue3 of error50.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
@@ -18375,7 +18657,7 @@ function treeifyError2(error49, _mapper) {
       } else if (issue3.code === "invalid_element") {
         processError({ issues: issue3.issues }, issue3.path);
       } else {
-        const fullpath = [...path6, ...issue3.path];
+        const fullpath = [...path7, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -18407,8 +18689,8 @@ function treeifyError2(error49, _mapper) {
 }
 function toDotPath2(_path) {
   const segs = [];
-  const path6 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path6) {
+  const path7 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path7) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -29604,7 +29886,7 @@ Use these as DOMAIN values when delegating to @sme.`;
 });
 // src/tools/file-extractor.ts
 import * as fs3 from "fs";
-import * as path6 from "path";
+import * as path7 from "path";
 var EXT_MAP = {
   python: ".py",
   py: ".py",
@@ -29682,12 +29964,12 @@ var extract_code_blocks = tool({
       if (prefix) {
         filename = `${prefix}_${filename}`;
       }
-      let filepath = path6.join(targetDir, filename);
-      const base = path6.basename(filepath, path6.extname(filepath));
-      const ext = path6.extname(filepath);
+      let filepath = path7.join(targetDir, filename);
+      const base = path7.basename(filepath, path7.extname(filepath));
+      const ext = path7.extname(filepath);
       let counter = 1;
       while (fs3.existsSync(filepath)) {
-        filepath = path6.join(targetDir, `${base}_${counter}${ext}`);
+        filepath = path7.join(targetDir, `${base}_${counter}${ext}`);
         counter++;
       }
       try {
@@ -29811,6 +30093,8 @@ var OpenCodeSwarm = async (ctx) => {
   const delegationGateHandler = createDelegationGateHook(config3);
   const guardrailsConfig = GuardrailsConfigSchema.parse(config3.guardrails ?? {});
   const guardrailsHooks = createGuardrailsHooks(guardrailsConfig);
+  const summaryConfig = SummaryConfigSchema.parse(config3.summaries ?? {});
+  const toolSummarizerHook = createToolSummarizerHook(summaryConfig, ctx.directory);
   log("Plugin initialized", {
     directory: ctx.directory,
     maxIterations: config3.max_iterations,
@@ -29824,7 +30108,8 @@ var OpenCodeSwarm = async (ctx) => {
       commands: true,
       agentActivity: config3.hooks?.agent_activity !== false,
       delegationTracker: config3.hooks?.delegation_tracker === true,
-      guardrails: guardrailsConfig.enabled
+      guardrails: guardrailsConfig.enabled,
+      toolSummarizer: summaryConfig.enabled
     }
   });
   return {
@@ -29868,14 +30153,20 @@ var OpenCodeSwarm = async (ctx) => {
       }
       const session = swarmState.agentSessions.get(input.sessionID);
       const activeAgent = swarmState.activeAgent.get(input.sessionID);
-      if (session && activeAgent && activeAgent !== ORCHESTRATOR_NAME && session.delegationActive === false) {
-        swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
-        ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+      if (session && activeAgent && activeAgent !== ORCHESTRATOR_NAME) {
+        const stripActive = stripKnownSwarmPrefix(activeAgent);
+        if (stripActive !== ORCHESTRATOR_NAME) {
+          const staleDelegation = !session.delegationActive || Date.now() - session.lastToolCallTime > 60000;
+          if (staleDelegation) {
+            swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+            ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+          }
+        }
       }
       await guardrailsHooks.toolBefore(input, output);
       await safeHook(activityHooks.toolBefore)(input, output);
     },
-    "tool.execute.after": composeHandlers(activityHooks.toolAfter, guardrailsHooks.toolAfter),
+    "tool.execute.after": composeHandlers(activityHooks.toolAfter, guardrailsHooks.toolAfter, toolSummarizerHook),
     "chat.message": safeHook(delegationHandler)
   };
 };

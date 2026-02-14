@@ -68,6 +68,13 @@ export function createGuardrailsHooks(config: GuardrailsConfig): {
 			const agentName = swarmState.activeAgent.get(input.sessionID);
 			const session = ensureAgentSession(input.sessionID, agentName);
 
+			// SECOND exemption check: after session resolution, check if the resolved agent is architect
+			// This catches cases where activeAgent was updated between the first check and session resolution
+			const resolvedName = stripKnownSwarmPrefix(session.agentName);
+			if (resolvedName === ORCHESTRATOR_NAME) {
+				return;
+			}
+
 			// Resolve per-agent config using profile overrides
 			const agentConfig = resolveGuardrailsConfig(config, session.agentName);
 

@@ -9,6 +9,7 @@ export { handleExportCommand } from './export';
 export { handleHistoryCommand } from './history';
 export { handlePlanCommand } from './plan';
 export { handleResetCommand } from './reset';
+export { handleRetrieveCommand } from './retrieve';
 export { handleStatusCommand } from './status';
 /**
  * Creates a command.execute.before handler for /swarm commands.

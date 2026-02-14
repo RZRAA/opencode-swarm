@@ -98,6 +98,17 @@ export const EvidenceConfigSchema = z.object({
 
 export type EvidenceConfig = z.infer<typeof EvidenceConfigSchema>;
 
+// Summary configuration (reversible summaries for oversized tool outputs)
+export const SummaryConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	threshold_bytes: z.number().min(1024).max(1048576).default(20480),
+	max_summary_chars: z.number().min(100).max(5000).default(1000),
+	max_stored_bytes: z.number().min(10240).max(104857600).default(10485760),
+	retention_days: z.number().min(1).max(365).default(7),
+});
+
+export type SummaryConfig = z.infer<typeof SummaryConfigSchema>;
+
 // Guardrails profile (per-agent overrides - all fields optional)
 export const GuardrailsProfileSchema = z.object({
 	max_tool_calls: z.number().min(0).max(1000).optional(),
@@ -263,6 +274,9 @@ export const PluginConfigSchema = z.object({
 
 	// Evidence configuration
 	evidence: EvidenceConfigSchema.optional(),
+
+	// Summary configuration
+	summaries: SummaryConfigSchema.optional(),
 });
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

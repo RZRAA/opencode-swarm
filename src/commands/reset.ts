@@ -41,6 +41,19 @@ export async function handleResetCommand(
 		}
 	}
 
+	// Clean up summaries directory
+	try {
+		const summariesPath = validateSwarmPath(directory, 'summaries');
+		if (fs.existsSync(summariesPath)) {
+			fs.rmSync(summariesPath, { recursive: true, force: true });
+			results.push('- ✅ Deleted summaries/ directory');
+		} else {
+			results.push('- ⏭️ summaries/ not found (skipped)');
+		}
+	} catch {
+		results.push('- ❌ Failed to delete summaries/');
+	}
+
 	return [
 		'## Swarm Reset Complete',
 		'',

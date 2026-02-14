@@ -11,6 +11,7 @@ import { handleExportCommand } from './export';
 import { handleHistoryCommand } from './history';
 import { handlePlanCommand } from './plan';
 import { handleResetCommand } from './reset';
+import { handleRetrieveCommand } from './retrieve';
 import { handleStatusCommand } from './status';
 
 // Re-export individual handlers
@@ -24,6 +25,7 @@ export { handleExportCommand } from './export';
 export { handleHistoryCommand } from './history';
 export { handlePlanCommand } from './plan';
 export { handleResetCommand } from './reset';
+export { handleRetrieveCommand } from './retrieve';
 export { handleStatusCommand } from './status';
 
 const HELP_TEXT = [
@@ -40,6 +42,7 @@ const HELP_TEXT = [
 	'- `/swarm benchmark [--cumulative] [--ci-gate]` — Show performance metrics',
 	'- `/swarm export` — Export plan and context as JSON',
 	'- `/swarm reset --confirm` — Clear swarm state files',
+	'- `/swarm retrieve <id>` — Retrieve full output from a summary',
 ].join('\n');
 
 /**
@@ -104,6 +107,9 @@ export function createSwarmCommandHandler(
 				break;
 			case 'reset':
 				text = await handleResetCommand(directory, args);
+				break;
+			case 'retrieve':
+				text = await handleRetrieveCommand(directory, args);
 				break;
 			default:
 				text = HELP_TEXT;

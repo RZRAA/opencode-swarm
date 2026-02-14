@@ -1056,4 +1056,150 @@ describe('guardrails circuit breaker', () => {
 			).rejects.toThrow('Repeated the same tool call');
 		});
 	});
+
+	describe('architect exemption bug fix - stale delegation', () => {
+		it('exempts when activeAgent is subagent but session.agentName resolved to architect', async () => {
+			// This tests the SECOND exemption check in guardrails.ts after session resolution
+			const config = defaultConfig({ max_tool_calls: 5 });
+			const hooks = createGuardrailsHooks(config);
+
+			// Set activeAgent to a subagent (simulating stale state)
+			swarmState.activeAgent.set('stale-session', 'mega_coder');
+
+			// Create a session with architect (simulating stale delegation revert from index.ts)
+			startAgentSession('stale-session', 'architect');
+
+			// Make many calls - should NOT throw because session.agentName is architect
+			for (let i = 0; i < 10; i++) {
+				await hooks.toolBefore(
+					makeInput('stale-session', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// Verify no error thrown - second exemption check caught this
+			expect(true).toBe(true);
+		});
+
+		it('exempts when activeAgent is prefixed architect (mega_architect)', async () => {
+			// This tests the FIRST exemption check with stripKnownSwarmPrefix
+			const config = defaultConfig({ max_tool_calls: 5 });
+			const hooks = createGuardrailsHooks(config);
+
+			// Set activeAgent to prefixed architect
+			swarmState.activeAgent.set('mega-arch-session', 'mega_architect');
+
+			// Make many calls - should NOT throw because stripped name is 'architect'
+			for (let i = 0; i < 10; i++) {
+				await hooks.toolBefore(
+					makeInput('mega-arch-session', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// Verify no error thrown
+			expect(true).toBe(true);
+		});
+
+		it('exempts when activeAgent is bare "architect"', async () => {
+			// This tests the FIRST exemption check with exact architect match
+			const config = defaultConfig({ max_tool_calls: 5 });
+			const hooks = createGuardrailsHooks(config);
+
+			// Set activeAgent to bare architect
+			swarmState.activeAgent.set('arch-bare-session', 'architect');
+
+			// Make many calls - should NOT throw
+			for (let i = 0; i < 10; i++) {
+				await hooks.toolBefore(
+					makeInput('arch-bare-session', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// Verify no error thrown
+			expect(true).toBe(true);
+		});
+
+		it('subagent with fresh delegation is NOT exempt', async () => {
+			// This tests that subagents with fresh delegation still get guardrails applied
+			const config = defaultConfig({
+				max_tool_calls: 5,
+				profiles: { coder: { max_tool_calls: 5 } },
+			});
+			const hooks = createGuardrailsHooks(config);
+
+			// Set activeAgent to subagent with prefixed name
+			swarmState.activeAgent.set('fresh-subagent', 'mega_coder');
+
+			// Create session with coder (fresh delegation)
+			startAgentSession('fresh-subagent', 'mega_coder');
+			const session = getAgentSession('fresh-subagent');
+			if (session) {
+				session.delegationActive = true;
+				session.lastToolCallTime = Date.now(); // Fresh
+			}
+
+			// Make 4 calls - should not throw
+			for (let i = 0; i < 4; i++) {
+				await hooks.toolBefore(
+					makeInput('fresh-subagent', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// 5th call should throw - subagent is NOT exempt
+			await expect(
+				hooks.toolBefore(makeInput('fresh-subagent', 'tool-5', 'call-5'), makeOutput({ index: 5 })),
+			).rejects.toThrow('LIMIT REACHED');
+		});
+
+		it('prefixed subagent name (mega_coder) gets guardrails applied', async () => {
+			// This tests that prefixed subagent names are properly stripped and checked
+			const config = defaultConfig({
+				max_tool_calls: 3,
+				profiles: { coder: { max_tool_calls: 3 } },
+			});
+			const hooks = createGuardrailsHooks(config);
+
+			// Set activeAgent to prefixed coder
+			swarmState.activeAgent.set('prefixed-coder', 'mega_coder');
+
+			// Make 2 calls - should not throw
+			for (let i = 0; i < 2; i++) {
+				await hooks.toolBefore(
+					makeInput('prefixed-coder', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// 3rd call should throw - coder is NOT exempt
+			await expect(
+				hooks.toolBefore(makeInput('prefixed-coder', 'tool-3', 'call-3'), makeOutput({ index: 3 })),
+			).rejects.toThrow('LIMIT REACHED');
+		});
+
+		it('session agentName change to architect exempts from guardrails', async () => {
+			// This simulates the scenario where ensureAgentSession updates agentName to architect
+			const config = defaultConfig({ max_tool_calls: 5 });
+			const hooks = createGuardrailsHooks(config);
+
+			// Start with subagent in activeAgent map
+			swarmState.activeAgent.set('switched-session', 'mega_coder');
+
+			// But session was already updated to architect (by stale delegation revert)
+			startAgentSession('switched-session', 'architect');
+
+			// Make many calls - should NOT throw
+			for (let i = 0; i < 10; i++) {
+				await hooks.toolBefore(
+					makeInput('switched-session', `tool-${i}`, `call-${i}`),
+					makeOutput({ index: i }),
+				);
+			}
+
+			// Verify no error thrown
+			expect(true).toBe(true);
+		});
+	});
 });

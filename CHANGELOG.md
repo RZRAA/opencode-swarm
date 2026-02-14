@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.3] - 2026-02-14
+### Fixed
+- **Guardrails circuit breaker architect exemption regression** — Fixed stale delegation timeout and added second exemption check to prevent false circuit breaker trips for the architect agent during complex orchestration flows.
+
+### Added
+- **Reversible summaries for oversized tool outputs** — New `tool.execute.after` hook auto-summarizes tool outputs that exceed a configurable byte threshold (default 20 KB). Oversized outputs are replaced with a compact summary containing a retrieval ID (e.g., S1, S2) while the full content is stored in `.swarm/summaries/`. Configurable via `summaries` config block:
+  - `enabled` (default true), `threshold_bytes` (default 20480), `max_summary_chars` (default 1000)
+  - `max_stored_bytes` (default 10 MB), `retention_days` (default 7)
+- **`/swarm retrieve <id>` command** — Retrieves the full original output for a given summary ID
+- Hysteresis-based threshold (1.25× factor) prevents churn for outputs near the threshold boundary
+- Graceful fail-open: if storage fails, original output passes through unchanged
+- Content-type detection (JSON, code, text, binary) for intelligent summary previews
+
+### Tests
+- 8 new tool-summarizer hook tests in `tests/unit/hooks/tool-summarizer.test.ts` (disabled config, threshold filtering, summary storage, ID incrementing, counter reset, fail-open, factory, end-to-end integration)
+- 4 new retrieve command tests in `tests/unit/commands/retrieve.test.ts` (help text, valid retrieval, not found, invalid ID)
+- Total: 1027 tests across 44 files
+
 ## [5.1.2] - 2026-02-13
 ### Added
 - **`/swarm benchmark` command** — New performance metrics command with three modes:

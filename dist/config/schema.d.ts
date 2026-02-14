@@ -120,6 +120,14 @@ export declare const EvidenceConfigSchema: z.ZodObject<{
     auto_archive: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>;
 export type EvidenceConfig = z.infer<typeof EvidenceConfigSchema>;
+export declare const SummaryConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    threshold_bytes: z.ZodDefault<z.ZodNumber>;
+    max_summary_chars: z.ZodDefault<z.ZodNumber>;
+    max_stored_bytes: z.ZodDefault<z.ZodNumber>;
+    retention_days: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export type SummaryConfig = z.infer<typeof SummaryConfigSchema>;
 export declare const GuardrailsProfileSchema: z.ZodObject<{
     max_tool_calls: z.ZodOptional<z.ZodNumber>;
     max_duration_minutes: z.ZodOptional<z.ZodNumber>;
@@ -261,6 +269,13 @@ export declare const PluginConfigSchema: z.ZodObject<{
         max_age_days: z.ZodDefault<z.ZodNumber>;
         max_bundles: z.ZodDefault<z.ZodNumber>;
         auto_archive: z.ZodDefault<z.ZodBoolean>;
+    }, z.core.$strip>>;
+    summaries: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        threshold_bytes: z.ZodDefault<z.ZodNumber>;
+        max_summary_chars: z.ZodDefault<z.ZodNumber>;
+        max_stored_bytes: z.ZodDefault<z.ZodNumber>;
+        retention_days: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

@@ -146,6 +146,12 @@ export function createSystemEnhancerHook(
 								}
 							}
 						}
+
+						// Priority 5 (lowest): Summarization awareness
+						tryInject(
+							'[SWARM HINT] Large tool outputs may be auto-summarized. Use /swarm retrieve <id> to get the full content if needed.',
+						);
+
 						return;
 					}
 

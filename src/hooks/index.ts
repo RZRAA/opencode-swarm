@@ -1,8 +1,8 @@
 export { createAgentActivityHooks } from './agent-activity';
 export { createCompactionCustomizerHook } from './compaction-customizer';
 export { createContextBudgetHandler } from './context-budget';
-export { createDelegationTrackerHook } from './delegation-tracker';
 export { createDelegationGateHook } from './delegation-gate';
+export { createDelegationTrackerHook } from './delegation-tracker';
 export {
 	extractCurrentPhase,
 	extractCurrentPhaseFromPlan,
@@ -16,6 +16,10 @@ export {
 export { createGuardrailsHooks } from './guardrails';
 export { createPipelineTrackerHook } from './pipeline-tracker';
 export { createSystemEnhancerHook } from './system-enhancer';
+export {
+	createToolSummarizerHook,
+	resetSummaryIdCounter,
+} from './tool-summarizer';
 export {
 	composeHandlers,
 	estimateTokens,

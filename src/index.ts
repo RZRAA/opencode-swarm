@@ -3,7 +3,11 @@ import { createAgents, getAgentConfigs } from './agents';
 import { createSwarmCommandHandler } from './commands';
 import { loadPluginConfig } from './config';
 import { ORCHESTRATOR_NAME } from './config/constants';
-import { GuardrailsConfigSchema } from './config/schema';
+import {
+	GuardrailsConfigSchema,
+	SummaryConfigSchema,
+	stripKnownSwarmPrefix,
+} from './config/schema';
 import {
 	composeHandlers,
 	createAgentActivityHooks,
@@ -14,6 +18,7 @@ import {
 	createGuardrailsHooks,
 	createPipelineTrackerHook,
 	createSystemEnhancerHook,
+	createToolSummarizerHook,
 	safeHook,
 } from './hooks';
 import { ensureAgentSession, swarmState } from './state';
@@ -49,6 +54,11 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		config.guardrails ?? {},
 	);
 	const guardrailsHooks = createGuardrailsHooks(guardrailsConfig);
+	const summaryConfig = SummaryConfigSchema.parse(config.summaries ?? {});
+	const toolSummarizerHook = createToolSummarizerHook(
+		summaryConfig,
+		ctx.directory,
+	);
 
 	log('Plugin initialized', {
 		directory: ctx.directory,
@@ -65,6 +75,7 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			agentActivity: config.hooks?.agent_activity !== false,
 			delegationTracker: config.hooks?.delegation_tracker === true,
 			guardrails: guardrailsConfig.enabled,
+			toolSummarizer: summaryConfig.enabled,
 		},
 	});
 
@@ -141,17 +152,24 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 				swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
 			}
 
-			// Revert to primary agent if delegation is not active
+			// Revert to primary agent if delegation appears stale
+			// Delegation is stale if:
+			// 1. delegationActive is explicitly false, OR
+			// 2. The session's lastToolCallTime is >60s old (subagent completed, no chat.message reset)
+			// 60s chosen to allow for slow subagent operations (file I/O, network, compilation)
 			const session = swarmState.agentSessions.get(input.sessionID);
 			const activeAgent = swarmState.activeAgent.get(input.sessionID);
-			if (
-				session &&
-				activeAgent &&
-				activeAgent !== ORCHESTRATOR_NAME &&
-				session.delegationActive === false
-			) {
-				swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
-				ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+			if (session && activeAgent && activeAgent !== ORCHESTRATOR_NAME) {
+				const stripActive = stripKnownSwarmPrefix(activeAgent);
+				if (stripActive !== ORCHESTRATOR_NAME) {
+					const staleDelegation =
+						!session.delegationActive ||
+						Date.now() - session.lastToolCallTime > 60000;
+					if (staleDelegation) {
+						swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+						ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+					}
+				}
 			}
 
 			// Guardrails runs first WITHOUT safeHook — throws must propagate to block tools
@@ -163,6 +181,7 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		'tool.execute.after': composeHandlers(
 			activityHooks.toolAfter,
 			guardrailsHooks.toolAfter,
+			toolSummarizerHook,
 			// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
 		) as any,
 
