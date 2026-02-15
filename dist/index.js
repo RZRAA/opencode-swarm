@@ -16792,6 +16792,9 @@ function createGuardrailsHooks(config2) {
         return;
       }
       const agentConfig = resolveGuardrailsConfig(config2, session.agentName);
+      if (agentConfig.max_duration_minutes === 0 && agentConfig.max_tool_calls === 0) {
+        return;
+      }
       if (session.hardLimitHit) {
         throw new Error("\uD83D\uDED1 CIRCUIT BREAKER: Agent blocked. Hard limit was previously triggered. Stop making tool calls and return your progress summary.");
       }

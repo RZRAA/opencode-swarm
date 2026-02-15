@@ -91,6 +91,15 @@ export function createGuardrailsHooks(config: GuardrailsConfig): {
 			// Resolve per-agent config using profile overrides
 			const agentConfig = resolveGuardrailsConfig(config, session.agentName);
 
+			// FOURTH exemption check: If resolved config shows 0 limits (architect-like), exempt
+			// This is the final safety net for edge cases where name-based checks fail
+			if (
+				agentConfig.max_duration_minutes === 0 &&
+				agentConfig.max_tool_calls === 0
+			) {
+				return;
+			}
+
 			// Check if hard limit was already hit
 			if (session.hardLimitHit) {
 				throw new Error(
