@@ -50,6 +50,9 @@ export interface AgentSessionState {
 	/** Timestamp of most recent tool call (for stale session eviction) */
 	lastToolCallTime: number;
 
+	/** Timestamp of most recent agent identity event (chat.message sets/changes identity) */
+	lastAgentEventTime: number;
+
 	/** Total tool calls in this session */
 	toolCallCount: number;
 
@@ -141,6 +144,7 @@ export function startAgentSession(
 		agentName,
 		startTime: now,
 		lastToolCallTime: now,
+		lastAgentEventTime: now,
 		toolCallCount: 0,
 		consecutiveErrors: 0,
 		recentToolCalls: [],
@@ -205,6 +209,8 @@ export function ensureAgentSession(
 			session.lastSuccessTime = now;
 			// Reset delegation state on agent switch
 			session.delegationActive = false;
+			// Update agent event timestamp for stale detection
+			session.lastAgentEventTime = now;
 		}
 		session.lastToolCallTime = now;
 		return session;
@@ -218,4 +224,16 @@ export function ensureAgentSession(
 		throw new Error(`Failed to create guardrail session for ${sessionId}`);
 	}
 	return session;
+}
+
+/**
+ * Update only the agent event timestamp (for stale detection).
+ * Does NOT change agent name or reset guardrail state.
+ * @param sessionId - The session identifier
+ */
+export function updateAgentEventTime(sessionId: string): void {
+	const session = swarmState.agentSessions.get(sessionId);
+	if (session) {
+		session.lastAgentEventTime = Date.now();
+	}
 }

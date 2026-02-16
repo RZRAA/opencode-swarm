@@ -351,4 +351,121 @@ describe('DelegationTrackerHook', () => {
 			expect(swarmState.pendingEvents).toBe(0);
 		});
 	});
+
+	// Regression tests for v5.1.6 hotfix: architect identity-stuck
+	describe('architect identity-stuck hotfix', () => {
+		describe('lastAgentEventTime updates', () => {
+			it('updates lastAgentEventTime when chat.message sets subagent', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+				const beforeTime = Date.now() - 1000; // 1 second ago
+
+				// Set initial agent event time
+				await hook({ sessionID: sessionId, agent: 'architect' }, {});
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session).toBeDefined();
+				expect(session!.lastAgentEventTime).toBeGreaterThanOrEqual(beforeTime);
+			});
+
+			it('updates lastAgentEventTime when chat.message clears agent (handoff to architect)', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				// First set a subagent
+				await hook({ sessionID: sessionId, agent: 'coder' }, {});
+				const beforeTime = Date.now();
+
+				// Then clear agent to trigger handoff to architect
+				await hook({ sessionID: sessionId, agent: '' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session).toBeDefined();
+				// lastAgentEventTime should be updated after handoff
+				expect(session!.lastAgentEventTime).toBeGreaterThanOrEqual(beforeTime);
+			});
+		});
+
+		describe('delegationActive semantics', () => {
+			it('sets delegationActive=false for architect agent', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				await hook({ sessionID: sessionId, agent: 'architect' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(false);
+			});
+
+			it('sets delegationActive=false for architect-prefixed names (mega_architect)', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				await hook({ sessionID: sessionId, agent: 'mega_architect' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(false);
+			});
+
+			it('sets delegationActive=true for subagent (coder)', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				await hook({ sessionID: sessionId, agent: 'coder' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(true);
+			});
+
+			it('sets delegationActive=true for all subagent types', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const subagents = ['sme', 'reviewer', 'critic', 'explorer', 'test_engineer'];
+
+				for (const agent of subagents) {
+					const sessionId = `session-${agent}`;
+					await hook({ sessionID: sessionId, agent }, {});
+
+					const session = swarmState.agentSessions.get(sessionId);
+					expect(session!.delegationActive).toBe(true);
+				}
+			});
+
+			it('sets delegationActive=false when agent field is empty (architect handoff)', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				// First set a subagent
+				await hook({ sessionID: sessionId, agent: 'coder' }, {});
+				expect(swarmState.agentSessions.get(sessionId)!.delegationActive).toBe(true);
+
+				// Then clear agent to trigger handoff
+				await hook({ sessionID: sessionId, agent: '' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(false);
+			});
+		});
+
+		describe('architect-prefixed names treated as architect', () => {
+			it('treats mega_architect as architect', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				await hook({ sessionID: sessionId, agent: 'mega_architect' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(false);
+				expect(swarmState.activeAgent.get(sessionId)).toBe('mega_architect');
+			});
+
+			it('treats senior_architect as architect', async () => {
+				const hook = createDelegationTrackerHook(defaultConfig);
+				const sessionId = 'test-session';
+
+				await hook({ sessionID: sessionId, agent: 'senior_architect' }, {});
+
+				const session = swarmState.agentSessions.get(sessionId);
+				expect(session!.delegationActive).toBe(false);
+			});
+		});
+	});
 });

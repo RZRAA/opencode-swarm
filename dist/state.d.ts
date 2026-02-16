@@ -43,6 +43,8 @@ export interface AgentSessionState {
     startTime: number;
     /** Timestamp of most recent tool call (for stale session eviction) */
     lastToolCallTime: number;
+    /** Timestamp of most recent agent identity event (chat.message sets/changes identity) */
+    lastAgentEventTime: number;
     /** Total tool calls in this session */
     toolCallCount: number;
     /** Consecutive errors (reset on success) */
@@ -114,3 +116,9 @@ export declare function getAgentSession(sessionId: string): AgentSessionState | 
  * @returns The AgentSessionState
  */
 export declare function ensureAgentSession(sessionId: string, agentName?: string): AgentSessionState;
+/**
+ * Update only the agent event timestamp (for stale detection).
+ * Does NOT change agent name or reset guardrail state.
+ * @param sessionId - The session identifier
+ */
+export declare function updateAgentEventTime(sessionId: string): void;

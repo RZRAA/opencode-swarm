@@ -7,8 +7,9 @@
 
 import { ORCHESTRATOR_NAME } from '../config/constants';
 import type { PluginConfig } from '../config/schema';
+import { stripKnownSwarmPrefix } from '../config/schema';
 import type { DelegationEntry } from '../state';
-import { ensureAgentSession, swarmState } from '../state';
+import { ensureAgentSession, swarmState, updateAgentEventTime } from '../state';
 
 /**
  * Creates the chat.message hook for delegation tracking.
@@ -23,6 +24,8 @@ export function createDelegationTrackerHook(
 		input: { sessionID: string; agent?: string },
 		_output: Record<string, unknown>,
 	): Promise<void> => {
+		const now = Date.now();
+
 		// If no agent is specified, the architect is taking over (delegation ended)
 		// Update activeAgent to architect and reset session startTime so duration limit doesn't apply
 		if (!input.agent || input.agent === '') {
@@ -35,6 +38,8 @@ export function createDelegationTrackerHook(
 			swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
 			// Reset session with architect name to reset startTime for accurate duration tracking
 			ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+			// Update agent event timestamp for stale detection
+			updateAgentEventTime(input.sessionID);
 			return;
 		}
 
@@ -46,11 +51,19 @@ export function createDelegationTrackerHook(
 		// Update the active agent
 		swarmState.activeAgent.set(input.sessionID, agentName);
 
+		// Determine if this is an architect (after stripping prefix)
+		// Architect-prefixed names like "mega_architect" are treated as architect
+		const strippedAgent = stripKnownSwarmPrefix(agentName);
+		const isArchitect = strippedAgent === ORCHESTRATOR_NAME;
+
 		// Ensure guardrail session exists with correct agent name
 		// This prevents the race condition where tool.execute.before fires
 		// before chat.message, causing sessions to be created with 'unknown'
 		const session = ensureAgentSession(input.sessionID, agentName);
-		session.delegationActive = true;
+
+		// Set delegationActive: false for architect, true for subagents
+		// This ensures stale detection works correctly for both cases
+		session.delegationActive = !isArchitect;
 
 		// If delegation tracking is enabled and agent has changed, log the delegation
 		if (
@@ -62,7 +75,7 @@ export function createDelegationTrackerHook(
 			const entry: DelegationEntry = {
 				from: previousAgent,
 				to: agentName,
-				timestamp: Date.now(),
+				timestamp: now,
 			};
 
 			// Get or create the delegation chain for this session

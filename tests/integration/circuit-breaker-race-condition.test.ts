@@ -318,7 +318,7 @@ describe('Circuit Breaker Race Condition', () => {
 		).rejects.toThrow(/LIMIT REACHED.*Duration exhausted.*45/);
 	});
 
-	it('should handle unknown agent names by falling back to architect profile', async () => {
+	it('should handle unknown agent names by using base config (not architect exempt)', async () => {
 		const config: GuardrailsConfig = {
 			enabled: true,
 			max_tool_calls: 100,
@@ -341,17 +341,17 @@ describe('Circuit Breaker Race Condition', () => {
 		swarmState.activeAgent.set(sessionId, 'custom_mystery_agent');
 		const session = ensureAgentSession(sessionId, 'custom_mystery_agent');
 
-		// Simulate 50 minutes of work (would exceed most limits)
+		// Simulate 50 minutes of work (would exceed base config limit of 30 minutes)
 		session.startTime = Date.now() - 50 * 60000;
 		session.lastToolCallTime = Date.now() - 1000;
 
-		// Should NOT throw because unknown agents get architect profile (exempt)
-		// This is the "belt-and-suspenders" fallback in resolveGuardrailsConfig
+		// Should throw because unknown agents get base config (not architect exempt)
+		// This is the fix: unknown agents should NOT bypass guardrails via architect fallback
 		await expect(
 			hooks.toolBefore(
 				{ tool: 'read', sessionID: sessionId, callID: 'call-1' },
 				{ args: { filePath: '/test' } },
 			),
-		).resolves.toBeUndefined();
+		).rejects.toThrow(/LIMIT REACHED.*Duration exhausted.*30/);
 	});
 });

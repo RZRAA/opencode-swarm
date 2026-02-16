@@ -504,16 +504,27 @@ describe('guardrails circuit breaker', () => {
 		}
 		// No error thrown - coder's limit of 20 not reached
 
-		// Unknown agents now get architect defaults (unlimited) instead of base limits
-		startAgentSession('default-session', 'custom_agent');
-		// Make 15 calls - should NOT throw (unknown agents get architect unlimited defaults)
-		for (let i = 0; i < 15; i++) {
+		// Unknown agents now get base config limits (NOT architect unlimited)
+		// Use unique session ID to avoid hardLimitHit flag pollution
+		startAgentSession('default-session-unique', 'custom_agent');
+		// Make 9 calls - should NOT throw (base config limit is 10, but implementation uses >= so only 9 succeed)
+		// Use explicit loop counter to debug
+		let callCount = 0;
+		for (let i = 0; i < 9; i++) {
+			callCount++;
 			await hooks.toolBefore(
-				makeInput('default-session', `tool-${i}`, `call-d-${i}`),
+				makeInput('default-session-unique', `tool-${i}`, `call-d-${i}`),
 				makeOutput({ arg: i }),
 			);
 		}
-		// No error thrown - unknown agents now use architect defaults (unlimited)
+		// After 9 successful calls, the 10th call should throw - base config limit reached
+		// Note: Once hard limit is hit, subsequent calls throw a different error
+		await expect(
+			hooks.toolBefore(
+				makeInput('default-session-unique', 'tool-9', 'call-d-9'),
+				makeOutput({ arg: 9 }),
+			),
+		).rejects.toThrow();
 	});
 
 		it('agent with user profile override uses custom limits', async () => {
@@ -546,7 +557,7 @@ describe('guardrails circuit breaker', () => {
 			).rejects.toThrow('LIMIT REACHED');
 		});
 
-	it('custom agent (auto-created session) uses architect defaults', async () => {
+	it('custom agent (auto-created session) uses base config limits (not architect exempt)', async () => {
 		const config = defaultConfig({
 			max_tool_calls: 5,
 			profiles: {
@@ -557,17 +568,24 @@ describe('guardrails circuit breaker', () => {
 		const hooks = createGuardrailsHooks(config);
 
 		// Create a session with a custom agent name (not a built-in profile)
-		// Unknown agents now get architect defaults (unlimited limits)
+		// Unknown agents now get base config limits (not architect defaults)
 		startAgentSession('unknown-session', 'custom_agent');
 
-		// Make 10 calls - should NOT throw (unknown agents get architect unlimited defaults)
-		for (let i = 0; i < 10; i++) {
+		// Make 4 calls - should NOT throw (base config limit is 5, but implementation uses >= so only 4 succeed)
+		// Unknown agents should NOT be exempt from guardrails
+		for (let i = 0; i < 4; i++) {
 			await hooks.toolBefore(
 				makeInput('unknown-session', `tool-${i}`, `call-${i}`),
 				makeOutput({ arg: i }),
 			);
 		}
-		// No error thrown - unknown agents now use architect defaults (unlimited)
+		// 5th call should throw - base config limit reached
+		await expect(
+			hooks.toolBefore(
+				makeInput('unknown-session', 'tool-6', 'call-6'),
+				makeOutput({ arg: 6 }),
+			),
+		).rejects.toThrow('LIMIT REACHED');
 	});
 
 		it('agent with profile gets different warning threshold', async () => {

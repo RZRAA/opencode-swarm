@@ -202,12 +202,22 @@ describe('resolveGuardrailsConfig', () => {
 		expect(result).toBe(baseConfig);
 	});
 
-	it('returns architect defaults when agentName not in built-in profiles', () => {
+	it('returns base config when agentName not in built-in profiles (unknown agent gets limits, not exempt)', () => {
 		const result = resolveGuardrailsConfig(baseConfig, 'unknown-agent');
-		expect(result.max_tool_calls).toBe(0); // Unlimited (architect default)
-		expect(result.max_duration_minutes).toBe(0); // Unlimited (architect default)
-		expect(result.max_consecutive_errors).toBe(8); // Architect default
-		expect(result.warning_threshold).toBe(0.75); // Architect default
+		// Unknown agents should get base config, NOT architect defaults
+		// This prevents guardrails bypass via unknown agent names
+		expect(result.max_tool_calls).toBe(10); // Base config value
+		expect(result.max_duration_minutes).toBe(30); // Base config value
+		expect(result.max_consecutive_errors).toBe(5); // Base config value
+		expect(result.warning_threshold).toBe(0.75); // Base config value
+	});
+
+	it('literal "unknown" agent name gets base config limits, not architect exempt', () => {
+		const result = resolveGuardrailsConfig(baseConfig, 'unknown');
+		// This is the specific regression case: "unknown" was falling back to architect (0 limits)
+		// Now it should get base config limits
+		expect(result.max_tool_calls).toBe(10); // Base config, NOT 0 (architect exempt)
+		expect(result.max_duration_minutes).toBe(30); // Base config, NOT 0 (architect exempt)
 	});
 
 	it('merges single field override (coder gets max_tool_calls=20 from profile)', () => {

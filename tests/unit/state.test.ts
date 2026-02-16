@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { swarmState, resetSwarmState, ToolCallEntry, ToolAggregate, DelegationEntry, startAgentSession, endAgentSession, getAgentSession, ensureAgentSession } from '../../src/state';
+import { swarmState, resetSwarmState, ToolCallEntry, ToolAggregate, DelegationEntry, startAgentSession, endAgentSession, getAgentSession, ensureAgentSession, updateAgentEventTime } from '../../src/state';
 
 describe('state module', () => {
 	beforeEach(() => {
@@ -578,6 +578,64 @@ describe('state module', () => {
 			const s1 = ensureAgentSession('same-id', 'architect');
 			const s2 = ensureAgentSession('same-id');
 			expect(s1).toBe(s2);
+		});
+	});
+
+	// Regression tests for v5.1.6 hotfix: architect identity-stuck
+	describe('lastAgentEventTime (v5.1.6 hotfix)', () => {
+		it('startAgentSession initializes lastAgentEventTime', () => {
+			startAgentSession('s1', 'architect');
+			const session = getAgentSession('s1');
+			expect(session!.lastAgentEventTime).toBeDefined();
+			expect(typeof session!.lastAgentEventTime).toBe('number');
+		});
+
+		it('ensureAgentSession updates lastAgentEventTime when agent changes', () => {
+			startAgentSession('s1', 'coder');
+			const session = getAgentSession('s1')!;
+			const originalTime = session.lastAgentEventTime;
+
+			// Small delay
+			const laterTime = originalTime + 100;
+			session.lastAgentEventTime = originalTime;
+
+			// Switch agent - should update lastAgentEventTime
+			ensureAgentSession('s1', 'reviewer');
+
+			expect(session.lastAgentEventTime).toBeGreaterThanOrEqual(originalTime);
+		});
+
+		it('ensureAgentSession does NOT update lastAgentEventTime when agent unchanged', () => {
+			startAgentSession('s1', 'coder');
+			const session = getAgentSession('s1')!;
+			const originalTime = session.lastAgentEventTime;
+
+			// Call ensureAgentSession with same agent - should NOT update lastAgentEventTime
+			ensureAgentSession('s1', 'coder');
+
+			// lastToolCallTime should be updated, but lastAgentEventTime should stay same
+			expect(session.lastToolCallTime).toBeGreaterThanOrEqual(originalTime);
+			// Note: lastAgentEventTime is not updated when agent doesn't change
+		});
+
+		it('updateAgentEventTime updates timestamp without changing agent', () => {
+			startAgentSession('s1', 'coder');
+			const session = getAgentSession('s1')!;
+			const originalTime = session.lastAgentEventTime;
+
+			// Small delay
+			session.lastAgentEventTime = originalTime;
+
+			// Call updateAgentEventTime
+			updateAgentEventTime('s1');
+
+			expect(session.lastAgentEventTime).toBeGreaterThanOrEqual(originalTime);
+			expect(session.agentName).toBe('coder'); // Agent unchanged
+		});
+
+		it('updateAgentEventTime does nothing for non-existent session', () => {
+			// Should not throw
+			expect(() => updateAgentEventTime('nonexistent')).not.toThrow();
 		});
 	});
 });

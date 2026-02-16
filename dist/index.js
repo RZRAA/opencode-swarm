@@ -13706,9 +13706,8 @@ function resolveGuardrailsConfig(base, agentName) {
   }
   const baseName = stripKnownSwarmPrefix(agentName);
   const builtInLookup = DEFAULT_AGENT_PROFILES[baseName];
-  const effectiveName = builtInLookup ? baseName : ORCHESTRATOR_NAME;
-  const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];
-  const userProfile = base.profiles?.[effectiveName] ?? base.profiles?.[baseName] ?? base.profiles?.[agentName];
+  const builtIn = builtInLookup;
+  const userProfile = base.profiles?.[baseName] ?? base.profiles?.[agentName];
   if (!builtIn && !userProfile) {
     return base;
   }
@@ -15046,6 +15045,7 @@ function startAgentSession(sessionId, agentName, staleDurationMs = 7200000) {
     agentName,
     startTime: now,
     lastToolCallTime: now,
+    lastAgentEventTime: now,
     toolCallCount: 0,
     consecutiveErrors: 0,
     recentToolCalls: [],
@@ -15075,6 +15075,7 @@ function ensureAgentSession(sessionId, agentName) {
       session.hardLimitHit = false;
       session.lastSuccessTime = now;
       session.delegationActive = false;
+      session.lastAgentEventTime = now;
     }
     session.lastToolCallTime = now;
     return session;
@@ -15085,6 +15086,12 @@ function ensureAgentSession(sessionId, agentName) {
     throw new Error(`Failed to create guardrail session for ${sessionId}`);
   }
   return session;
+}
+function updateAgentEventTime(sessionId) {
+  const session = swarmState.agentSessions.get(sessionId);
+  if (session) {
+    session.lastAgentEventTime = Date.now();
+  }
 }
 
 // src/commands/benchmark.ts
@@ -16733,6 +16740,7 @@ ${originalText}`;
 // src/hooks/delegation-tracker.ts
 function createDelegationTrackerHook(config2) {
   return async (input, _output) => {
+    const now = Date.now();
     if (!input.agent || input.agent === "") {
       const session2 = swarmState.agentSessions.get(input.sessionID);
       if (session2) {
@@ -16740,18 +16748,21 @@ function createDelegationTrackerHook(config2) {
       }
       swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
       ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+      updateAgentEventTime(input.sessionID);
       return;
     }
     const agentName = input.agent;
     const previousAgent = swarmState.activeAgent.get(input.sessionID);
     swarmState.activeAgent.set(input.sessionID, agentName);
+    const strippedAgent = stripKnownSwarmPrefix(agentName);
+    const isArchitect = strippedAgent === ORCHESTRATOR_NAME;
     const session = ensureAgentSession(input.sessionID, agentName);
-    session.delegationActive = true;
+    session.delegationActive = !isArchitect;
     if (config2.hooks?.delegation_tracker === true && previousAgent && previousAgent !== agentName) {
       const entry = {
         from: previousAgent,
         to: agentName,
-        timestamp: Date.now()
+        timestamp: now
       };
       if (!swarmState.delegationChains.has(input.sessionID)) {
         swarmState.delegationChains.set(input.sessionID, []);
@@ -30168,7 +30179,7 @@ var OpenCodeSwarm = async (ctx) => {
       if (session && activeAgent && activeAgent !== ORCHESTRATOR_NAME) {
         const stripActive = stripKnownSwarmPrefix(activeAgent);
         if (stripActive !== ORCHESTRATOR_NAME) {
-          const staleDelegation = !session.delegationActive || Date.now() - session.lastToolCallTime > 1e4;
+          const staleDelegation = !session.delegationActive || Date.now() - session.lastAgentEventTime > 1e4;
           if (staleDelegation) {
             swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
             ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
@@ -30178,7 +30189,21 @@ var OpenCodeSwarm = async (ctx) => {
       await guardrailsHooks.toolBefore(input, output);
       await safeHook(activityHooks.toolBefore)(input, output);
     },
-    "tool.execute.after": composeHandlers(activityHooks.toolAfter, guardrailsHooks.toolAfter, toolSummarizerHook),
+    "tool.execute.after": async (input, output) => {
+      await activityHooks.toolAfter(input, output);
+      await guardrailsHooks.toolAfter(input, output);
+      await toolSummarizerHook?.(input, output);
+      if (input.tool === "task") {
+        const sessionId = input.sessionID;
+        swarmState.activeAgent.set(sessionId, ORCHESTRATOR_NAME);
+        ensureAgentSession(sessionId, ORCHESTRATOR_NAME);
+        const session = swarmState.agentSessions.get(sessionId);
+        if (session) {
+          session.delegationActive = false;
+          session.lastAgentEventTime = Date.now();
+        }
+      }
+    },
     "chat.message": safeHook(delegationHandler)
   };
 };

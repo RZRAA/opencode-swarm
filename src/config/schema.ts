@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ALL_AGENT_NAMES, ORCHESTRATOR_NAME } from './constants';
+import { ALL_AGENT_NAMES } from './constants';
 
 // Agent override configuration
 export const AgentOverrideConfigSchema = z.object({
@@ -222,20 +222,16 @@ export function resolveGuardrailsConfig(
 	// Strip known swarm prefixes to get the base agent name
 	const baseName = stripKnownSwarmPrefix(agentName);
 
-	// Belt-and-suspenders: if no built-in profile matches, fall back to orchestrator
-	// so unknown agent names never use base defaults
+	// Belt-and-suspenders: if no built-in profile matches, do NOT fall back to architect
+	// (that would exempt unknown agents from guardrails). Unknown agents get base config.
 	const builtInLookup = DEFAULT_AGENT_PROFILES[baseName];
-	const effectiveName = builtInLookup ? baseName : ORCHESTRATOR_NAME;
 
-	// Layer 1: Apply built-in defaults for the agent (using effective name)
-	const builtIn = DEFAULT_AGENT_PROFILES[effectiveName];
+	// Layer 1: Apply built-in defaults for the agent (if known)
+	const builtIn = builtInLookup;
 
 	// Layer 2: Apply user-defined profile overrides (highest priority)
-	// Check effective name first, then base name, then original name for backwards compatibility
-	const userProfile =
-		base.profiles?.[effectiveName] ??
-		base.profiles?.[baseName] ??
-		base.profiles?.[agentName];
+	// Check base name first, then original name for backwards compatibility
+	const userProfile = base.profiles?.[baseName] ?? base.profiles?.[agentName];
 
 	if (!builtIn && !userProfile) {
 		return base;

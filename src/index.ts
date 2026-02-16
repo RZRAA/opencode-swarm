@@ -155,9 +155,11 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			// Revert to primary agent if delegation appears stale
 			// Delegation is stale if:
 			// 1. delegationActive is explicitly false, OR
-			// 2. The session's lastToolCallTime is >10s old (subagent completed, no chat.message reset)
+			// 2. The session's lastAgentEventTime is >10s old (subagent completed, no chat.message reset)
 			// 10s window is tight enough to prevent architect misidentification after delegation
 			// but loose enough to allow for slow subagent operations (file I/O, network)
+			// NOTE: Uses lastAgentEventTime (not lastToolCallTime) to ensure tool activity
+			// does not prevent stale subagent identity from being detected
 			const session = swarmState.agentSessions.get(input.sessionID);
 			const activeAgent = swarmState.activeAgent.get(input.sessionID);
 			if (session && activeAgent && activeAgent !== ORCHESTRATOR_NAME) {
@@ -165,7 +167,7 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 				if (stripActive !== ORCHESTRATOR_NAME) {
 					const staleDelegation =
 						!session.delegationActive ||
-						Date.now() - session.lastToolCallTime > 10000;
+						Date.now() - session.lastAgentEventTime > 10000;
 					if (staleDelegation) {
 						swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
 						ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
@@ -179,12 +181,34 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			await safeHook(activityHooks.toolBefore)(input, output);
 			// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
 		}) as any,
-		'tool.execute.after': composeHandlers(
-			activityHooks.toolAfter,
-			guardrailsHooks.toolAfter,
-			toolSummarizerHook,
+
+		// Track tool usage + guardrails (after)
+		// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
+		'tool.execute.after': (async (input: any, output: any) => {
+			// Run existing handlers
+			await activityHooks.toolAfter(input, output);
+			await guardrailsHooks.toolAfter(input, output);
+			await toolSummarizerHook?.(input, output);
+
+			// Deterministic handoff: when task tool completes, force handoff to architect
+			// This ensures architect takes over even if chat.message is delayed
+			// NOTE: Must NOT rely on chat.message ordering
+			if (input.tool === 'task') {
+				const sessionId = input.sessionID;
+				// Set active agent to architect
+				swarmState.activeAgent.set(sessionId, ORCHESTRATOR_NAME);
+				// Ensure session is architect and reset state
+				ensureAgentSession(sessionId, ORCHESTRATOR_NAME);
+				// Mark delegation as inactive
+				const session = swarmState.agentSessions.get(sessionId);
+				if (session) {
+					session.delegationActive = false;
+					// Update agent event timestamp for stale detection
+					session.lastAgentEventTime = Date.now();
+				}
+			}
 			// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
-		) as any,
+		}) as any,
 
 		// Track agent delegations and active agent
 		// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
