@@ -16749,12 +16749,14 @@ function createDelegationTrackerHook(config2) {
     const now = Date.now();
     if (!input.agent || input.agent === "") {
       const session2 = swarmState.agentSessions.get(input.sessionID);
-      if (session2) {
+      if (session2 && session2.delegationActive) {
         session2.delegationActive = false;
+        swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+        ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+        updateAgentEventTime(input.sessionID);
+      } else if (!session2) {
+        ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
       }
-      swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
-      ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
-      updateAgentEventTime(input.sessionID);
       return;
     }
     const agentName = input.agent;

@@ -30,16 +30,20 @@ export function createDelegationTrackerHook(
 		// Update activeAgent to architect and reset session startTime so duration limit doesn't apply
 		if (!input.agent || input.agent === '') {
 			const session = swarmState.agentSessions.get(input.sessionID);
-			if (session) {
+
+			// Only reset if delegation was actually active (prevents spurious resets)
+			if (session && session.delegationActive) {
 				session.delegationActive = false;
+				// Set activeAgent to architect to ensure duration exemption applies
+				swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
+				// Reset session with architect name to reset startTime for accurate duration tracking
+				ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
+				// Update agent event timestamp for stale detection
+				updateAgentEventTime(input.sessionID);
+			} else if (!session) {
+				// Initialize session if missing (e.g. first message)
+				ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
 			}
-			// Set activeAgent to architect to ensure duration exemption applies
-			// This fixes the regression where architect inherits subagent startTime
-			swarmState.activeAgent.set(input.sessionID, ORCHESTRATOR_NAME);
-			// Reset session with architect name to reset startTime for accurate duration tracking
-			ensureAgentSession(input.sessionID, ORCHESTRATOR_NAME);
-			// Update agent event timestamp for stale detection
-			updateAgentEventTime(input.sessionID);
 			return;
 		}
 

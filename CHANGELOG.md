@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.8] - 2026-02-16
+
+### Fixed
+- Fixed a potential race condition in the delegation tracker where spurious architect messages could reset active subagent sessions or fail to properly initialize the architect session state.
+- Improved circuit breaker stability by ensuring session duration is tracked correctly across delegation boundaries.
+
 ## [5.1.7] - 2026-02-16
 ### Fixed
 - **Architect identity normalization hardening** — `stripKnownSwarmPrefix` now handles case-insensitive and separator variants (underscore/hyphen/space) when stripping agent prefixes. Paid architect naming variants (e.g., `paid_architect`, `paid-architect`, `PAID ARCHITECT`) now correctly resolve to the orchestrator identity for exemption purposes. Subagent and unknown agent guardrails behavior remains unchanged.
