@@ -38,12 +38,33 @@ describe('handleBenchmarkCommand', () => {
 		// Add agent sessions
 		startAgentSession('session-1', 'coder');
 		const coderSession = swarmState.agentSessions.get('session-1')!;
-		coderSession.toolCallCount = 25;
-		coderSession.warningIssued = true;
+		coderSession.windows['coder:1'] = {
+			id: 1,
+			agentName: 'coder',
+			startedAtMs: Date.now(),
+			toolCalls: 25,
+			consecutiveErrors: 0,
+			hardLimitHit: false,
+			lastSuccessTimeMs: Date.now(),
+			recentToolCalls: [],
+			warningIssued: true,
+			warningReason: 'test warning',
+		};
 
 		startAgentSession('session-2', 'reviewer');
 		const reviewerSession = swarmState.agentSessions.get('session-2')!;
-		reviewerSession.toolCallCount = 10;
+		reviewerSession.windows['reviewer:1'] = {
+			id: 1,
+			agentName: 'reviewer',
+			startedAtMs: Date.now(),
+			toolCalls: 10,
+			consecutiveErrors: 0,
+			hardLimitHit: false,
+			lastSuccessTimeMs: Date.now(),
+			recentToolCalls: [],
+			warningIssued: false,
+			warningReason: '',
+		};
 
 		// Add tool aggregates
 		swarmState.toolAggregates.set('read', {

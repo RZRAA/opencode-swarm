@@ -29,9 +29,10 @@ export async function handleBenchmarkCommand(
 			hardLimits: 0,
 			warnings: 0,
 		};
-		e.toolCalls += s.toolCallCount;
-		if (s.hardLimitHit) e.hardLimits++;
-		if (s.warningIssued) e.warnings++;
+		const windows = Object.values(s.windows);
+		e.toolCalls += windows.reduce((sum, w) => sum + w.toolCalls, 0);
+		e.hardLimits += windows.filter((w) => w.hardLimitHit).length;
+		e.warnings += windows.filter((w) => w.warningIssued).length;
 		agentMap.set(s.agentName, e);
 	}
 	const agentHealth = Array.from(agentMap.entries()).map(([a, v]) => ({
