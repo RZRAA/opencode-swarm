@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-6.0.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-7-orange" alt="Agents">
-  <img src="https://img.shields.io/badge/tests-1101-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1188-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">🐝 OpenCode Swarm</h1>
@@ -138,15 +138,24 @@ OpenCode Swarm:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  PHASE 5: Execute (per task)                                            │
 │                                                                         │
-│   ┌─────────┐    ┌────────────┐    ┌──────────────┐                    │
-│   │ @coder  │ →  │ @reviewer  │ →  │    @test     │                    │
-│   │ 1 task  │    │ check all  │    │ write + run  │                    │
-│   └─────────┘    └────────────┘    └──────────────┘                    │
-│        │               │                   │                            │
-│        │     If REJECTED: retry    If FAIL: fix + retest               │
-│        └───────────────┘                                                │
+│   ┌─────────┐    ┌───────┐    ┌────────────┐    ┌──────────────┐       │
+│   │ @coder  │ →  │ diff  │ →  │ @reviewer  │ →  │    @test     │       │
+│   │ 1 task  │    │ tool  │    │ check all  │    │ write + run  │       │
+│   └─────────┘    └───────┘    └────────────┘    └──────────────┘       │
+│        │              │             │                   │               │
+│        │    Contract   │   If REJECTED:        If FAIL: fix            │
+│        │    changes?   │   retry from coder    + retest                │
+│        │       │       │             │                                  │
+│        │       ▼       │             ▼                                  │
+│        │  ┌─────────┐  │   ┌──────────────┐    ┌──────────────┐       │
+│        │  │@explorer│  │   │  @reviewer   │ →  │    @test     │       │
+│        │  │ impact  │  │   │ security-only│    │ adversarial  │       │
+│        │  │analysis │  │   │   (if match) │    │   (attacks)  │       │
+│        │  └─────────┘  │   └──────────────┘    └──────────────┘       │
+│        │               │                                               │
+│        └───────────────┘                                               │
 │                                                                         │
-│   Update plan.md: [x] Task complete (only if PASS)                      │
+│   Update plan.md: [x] Task complete (only after ALL gates pass)        │
 │   Next task...                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -334,6 +343,13 @@ bunx opencode-swarm uninstall --clean
 
 ## What's New
 
+### v6.0.0 — Core QA & Security Gates
+- **Dual-pass security reviewer** — After the general reviewer APPROVES, the architect automatically triggers a second security-only review pass when the changed file matches security-sensitive paths (`auth`, `crypto`, `session`, `token`, `middleware`, `api`, `security`) or the coder's output contains security keywords. Configurable via `review_passes` config.
+- **Adversarial testing** — After verification tests PASS, the test engineer is re-delegated with adversarial-only framing: attack vectors, boundary violations, and injection attempts. Pure prompt engineering, no new infrastructure.
+- **Integration impact analysis** — After the coder completes, the `diff` tool detects contract changes (exported functions, interfaces, types). If found, the explorer runs impact analysis across dependents before review begins.
+- **`diff` tool** — New agent-accessible tool providing structured git diff with numstat parsing, contract change detection, configurable base ref (`HEAD`/staged/unstaged), path filtering, and 500-line truncation.
+- **87 new tests** — 1188 total tests across 53+ files (up from 1101 in v5.2.0).
+
 ### v5.2.0 — Per-Invocation Guardrails
 - **Per-invocation budget isolation** — Guardrail limits (tool calls, duration, errors) now reset with each agent delegation. Second invocation of the same agent gets a fresh budget, preventing false circuit breaker trips in long-running projects.
 - **Architect protocol enforcement** — New mandatory QA gate rules: every coder task must go through reviewer approval + test_engineer verification before the next coder task. Protocol violations detected at runtime with warning injection.
@@ -409,7 +425,7 @@ All features are opt-in via configuration. See [Installation Guide](docs/install
 ### ✅ Quality Assurance
 | Agent | Role |
 |-------|------|
-| `reviewer` | Combined correctness + security review. The architect specifies CHECK dimensions (security, correctness, edge-cases, performance, etc.) per call. |
+| `reviewer` | Dual-pass review: correctness review first, then automatic security-only pass for security-sensitive files. The architect specifies CHECK dimensions per call. OWASP Top 10 categories built in. |
 | `critic` | Plan review gate. Reviews the architect's plan BEFORE implementation — checks completeness, feasibility, scope, dependencies, and flags AI-slop. |
 
 ---
@@ -516,6 +532,38 @@ Override limits for specific agents that need more (or less) room:
 
 Profiles merge with base config — only specified fields are overridden.
 
+### Review Passes
+
+Control the dual-pass security review behavior:
+
+```jsonc
+{
+  "review_passes": {
+    "always_security_review": false,  // default: false (only on security-sensitive files)
+    "security_globs": [               // default patterns:
+      "**/*auth*", "**/*crypto*",
+      "**/*session*", "**/*token*",
+      "**/*middleware*", "**/*api*",
+      "**/*security*"
+    ]
+  }
+}
+```
+
+Set `always_security_review: true` to run the security pass on every task, regardless of file path.
+
+### Integration Analysis
+
+Control whether contract change detection triggers impact analysis:
+
+```jsonc
+{
+  "integration_analysis": {
+    "enabled": true  // default: true
+  }
+}
+```
+
 > **Architect is exempt/unlimited by default:** The architect agent has no guardrail limits by default. To override, add a `profiles.architect` entry in your guardrails config.
 
 ### Per-Invocation Budgets
@@ -549,7 +597,7 @@ This prevents long-running projects from accumulating session-wide counters that
 | Execution | Serial (predictable) | Parallel (chaotic) | Parallel | Configurable |
 | Planning | Phased with acceptance criteria | Ad-hoc | Role-based | Graph-based |
 | Memory | Persistent `.swarm/` files | Session only | Session only | Checkpoints |
-| QA | Per-task (unified review) | Optional | Optional | Manual |
+| QA | Dual-pass per-task (review + security + adversarial) | Optional | Optional | Manual |
 | Model mixing | Per-agent configuration | Limited | Limited | Manual |
 | Resume projects | ✅ Native | ❌ | ❌ | Partial |
 | SME domains | Open-domain (any) | Generic | Generic | Generic |
@@ -561,7 +609,7 @@ This prevents long-running projects from accumulating session-wide counters that
 
 1. **Plan before code** - Documented phases with acceptance criteria
 2. **One task at a time** - Focused work, quality output
-3. **Review everything immediately** - Correctness + security review per task, not per project
+3. **Review everything immediately** - Dual-pass review (correctness + security) with adversarial testing per task
 4. **Cache SME knowledge** - Don't re-ask answered questions
 5. **Persistent memory** - `.swarm/` files survive sessions
 6. **Serial execution** - Predictable, debuggable, no race conditions
@@ -582,7 +630,7 @@ bun test
 bun test tests/unit/config/schema.test.ts
 ```
 
-1101 tests across 48 files covering config, tools, agents, hooks, commands, state, guardrails, evidence, plan schemas, circuit breaker race conditions, invocation windows, and multi-invocation isolation. Uses Bun's built-in test runner — zero additional test dependencies.
+1188 tests across 53+ files covering config, tools, agents, hooks, commands, state, guardrails, evidence, plan schemas, circuit breaker race conditions, invocation windows, multi-invocation isolation, security categories, review/integration schemas, and diff tool. Uses Bun's built-in test runner — zero additional test dependencies.
 
 ## Troubleshooting
 
