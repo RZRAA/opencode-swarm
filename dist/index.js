@@ -1,20 +1,5 @@
 // @bun
-var __create = Object.create;
-var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __toESM = (mod, isNodeMode, target) => {
-  target = mod != null ? __create(__getProtoOf(mod)) : {};
-  const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
-  for (let key of __getOwnPropNames(mod))
-    if (!__hasOwnProp.call(to, key))
-      __defProp(to, key, {
-        get: () => mod[key],
-        enumerable: true
-      });
-  return to;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
@@ -13644,7 +13629,8 @@ var EvidenceTypeSchema = exports_external.enum([
   "test",
   "diff",
   "approval",
-  "note"
+  "note",
+  "retrospective"
 ]);
 var EvidenceVerdictSchema = exports_external.enum([
   "pass",
@@ -13695,12 +13681,27 @@ var ApprovalEvidenceSchema = BaseEvidenceSchema.extend({
 var NoteEvidenceSchema = BaseEvidenceSchema.extend({
   type: exports_external.literal("note")
 });
+var RetrospectiveEvidenceSchema = BaseEvidenceSchema.extend({
+  type: exports_external.literal("retrospective"),
+  phase_number: exports_external.number().int().min(0),
+  total_tool_calls: exports_external.number().int().min(0),
+  coder_revisions: exports_external.number().int().min(0),
+  reviewer_rejections: exports_external.number().int().min(0),
+  test_failures: exports_external.number().int().min(0),
+  security_findings: exports_external.number().int().min(0),
+  integration_issues: exports_external.number().int().min(0),
+  task_count: exports_external.number().int().min(1),
+  task_complexity: exports_external.enum(["trivial", "simple", "moderate", "complex"]),
+  top_rejection_reasons: exports_external.array(exports_external.string()).default([]),
+  lessons_learned: exports_external.array(exports_external.string()).max(5).default([])
+});
 var EvidenceSchema = exports_external.discriminatedUnion("type", [
   ReviewEvidenceSchema,
   TestEvidenceSchema,
   DiffEvidenceSchema,
   ApprovalEvidenceSchema,
-  NoteEvidenceSchema
+  NoteEvidenceSchema,
+  RetrospectiveEvidenceSchema
 ]);
 var EvidenceBundleSchema = exports_external.object({
   schema_version: exports_external.literal("1.0.0"),
@@ -13836,6 +13837,11 @@ var UIReviewConfigSchema = exports_external.object({
     "profile page"
   ])
 });
+var CompactionAdvisoryConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  thresholds: exports_external.array(exports_external.number().int().min(10).max(500)).default([50, 75, 100, 125, 150]),
+  message: exports_external.string().default("[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.")
+});
 var GuardrailsProfileSchema = exports_external.object({
   max_tool_calls: exports_external.number().min(0).max(1000).optional(),
   max_duration_minutes: exports_external.number().min(0).max(480).optional(),
@@ -13949,7 +13955,8 @@ var PluginConfigSchema = exports_external.object({
   review_passes: ReviewPassesConfigSchema.optional(),
   integration_analysis: IntegrationAnalysisConfigSchema.optional(),
   docs: DocsConfigSchema.optional(),
-  ui_review: UIReviewConfigSchema.optional()
+  ui_review: UIReviewConfigSchema.optional(),
+  compaction_advisory: CompactionAdvisoryConfigSchema.optional()
 });
 
 // src/config/loader.ts
@@ -14132,6 +14139,7 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
    - Target file is in: pages/, components/, views/, screens/, ui/, layouts/
    If triggered: delegate to {{AGENT_PREFIX}}designer FIRST to produce a code scaffold. Then pass the scaffold to {{AGENT_PREFIX}}coder as INPUT alongside the task. The coder implements the TODOs in the scaffold without changing component structure or accessibility attributes.
    If not triggered: delegate directly to {{AGENT_PREFIX}}coder as normal.
+10. **RETROSPECTIVE TRACKING**: At the end of every phase, record phase metrics in .swarm/context.md under "## Phase Metrics" and write a retrospective evidence entry via the evidence manager. Track: phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned (max 5). Reset Phase Metrics to 0 after writing.
 
 ## AGENTS
 
@@ -14296,7 +14304,8 @@ For each task (respecting dependencies):
 5e. Security gate: if file matches security globs or content has security keywords \u2192 {{AGENT_PREFIX}}reviewer security-only. REJECTED \u2192 coder retry.
 5f. {{AGENT_PREFIX}}test_engineer - Verification tests. FAIL \u2192 coder retry from 5d.
 5g. {{AGENT_PREFIX}}test_engineer - Adversarial tests. FAIL \u2192 coder retry from 5d.
-5h. Update plan.md [x], proceed to next task.
+5h. COVERAGE CHECK: If test_engineer reports coverage < 70% \u2192 delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
+5i. Update plan.md [x], proceed to next task.
 
 ### Phase 6: Phase Complete
 1. {{AGENT_PREFIX}}explorer - Rescan
@@ -14305,8 +14314,9 @@ For each task (respecting dependencies):
    - Summary of what was added/modified/removed
    - List of doc files that may need updating (README.md, CONTRIBUTING.md, docs/)
 3. Update context.md
-4. Summarize to user
-5. Ask: "Ready for Phase [N+1]?"
+4. Write retrospective evidence: record phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned to .swarm/evidence/ via the evidence manager. Reset Phase Metrics in context.md to 0.
+5. Summarize to user
+6. Ask: "Ready for Phase [N+1]?"
 
 ### Blockers
 Mark [BLOCKED] in plan.md, skip to next unblocked task, inform user.
@@ -14906,7 +14916,13 @@ OUTPUT FORMAT:
 VERDICT: PASS | FAIL
 TESTS: [total count] tests, [pass count] passed, [fail count] failed
 FAILURES: [list of failed test names + error messages, if any]
-COVERAGE: [areas covered]`;
+COVERAGE: [areas covered]
+
+COVERAGE REPORTING:
+- After running tests, report the line/branch coverage percentage if the test runner provides it.
+- Format: COVERAGE_PCT: [N]% (or "N/A" if not available)
+- If COVERAGE_PCT < 70%, add a note: "COVERAGE_WARNING: Below 70% threshold \u2014 consider additional test cases for uncovered paths."
+- The architect uses this to decide whether to request an additional test pass (Rule 10 / Phase 5 step 5h).`;
 function createTestEngineerAgent(model, customPrompt, customAppendPrompt) {
   let prompt = TEST_ENGINEER_PROMPT;
   if (customPrompt) {
@@ -15449,9 +15465,11 @@ function startAgentSession(sessionId, agentName, staleDurationMs = 7200000) {
     delegationActive: false,
     activeInvocationId: 0,
     lastInvocationIdByAgent: {},
-    windows: {}
+    windows: {},
+    lastCompactionHint: 0
   };
   swarmState.agentSessions.set(sessionId, sessionState);
+  swarmState.activeAgent.set(sessionId, agentName);
 }
 function ensureAgentSession(sessionId, agentName) {
   const now = Date.now();
@@ -15471,6 +15489,9 @@ function ensureAgentSession(sessionId, agentName) {
       session.activeInvocationId = 0;
       session.lastInvocationIdByAgent = {};
       session.windows = {};
+    }
+    if (session.lastCompactionHint === undefined) {
+      session.lastCompactionHint = 0;
     }
     session.lastToolCallTime = now;
     return session;
@@ -17493,6 +17514,10 @@ ${originalText}`;
     })
   };
 }
+// src/hooks/system-enhancer.ts
+import * as fs3 from "fs";
+import * as path7 from "path";
+
 // src/hooks/context-scoring.ts
 function calculateAgeFactor(ageHours, config2) {
   if (ageHours <= 0) {
@@ -17628,6 +17653,66 @@ function createSystemEnhancerHook(config2, directory) {
           if (config2.docs?.enabled === false) {
             tryInject("[SWARM CONFIG] Docs agent is DISABLED. Skip docs delegation in Phase 6.");
           }
+          const sessionId_retro = _input.sessionID;
+          const activeAgent_retro = swarmState.activeAgent.get(sessionId_retro ?? "");
+          const isArchitect = !activeAgent_retro || stripKnownSwarmPrefix(activeAgent_retro) === "architect";
+          if (isArchitect) {
+            try {
+              const evidenceDir = path7.join(directory, ".swarm", "evidence");
+              if (fs3.existsSync(evidenceDir)) {
+                const files = fs3.readdirSync(evidenceDir).filter((f) => f.endsWith(".json")).sort().reverse();
+                for (const file2 of files.slice(0, 5)) {
+                  const content = JSON.parse(fs3.readFileSync(path7.join(evidenceDir, file2), "utf-8"));
+                  if (content.type === "retrospective") {
+                    const retro = content;
+                    const hints = [];
+                    if (retro.reviewer_rejections > 2) {
+                      hints.push(`Phase ${retro.phase_number} had ${retro.reviewer_rejections} reviewer rejections.`);
+                    }
+                    if (retro.top_rejection_reasons.length > 0) {
+                      hints.push(`Common rejection reasons: ${retro.top_rejection_reasons.join(", ")}.`);
+                    }
+                    if (retro.lessons_learned.length > 0) {
+                      hints.push(`Lessons: ${retro.lessons_learned.join("; ")}.`);
+                    }
+                    if (hints.length > 0) {
+                      const retroHint = `[SWARM RETROSPECTIVE] From Phase ${retro.phase_number}: ${hints.join(" ")}`;
+                      if (retroHint.length <= 800) {
+                        tryInject(retroHint);
+                      } else {
+                        tryInject(retroHint.substring(0, 800) + "...");
+                      }
+                    }
+                    break;
+                  }
+                }
+              }
+            } catch {}
+            const compactionConfig = config2.compaction_advisory;
+            if (compactionConfig?.enabled !== false && sessionId_retro) {
+              const session = swarmState.agentSessions.get(sessionId_retro);
+              if (session) {
+                const totalToolCalls = Array.from(swarmState.toolAggregates.values()).reduce((sum, agg) => sum + agg.count, 0);
+                const thresholds = compactionConfig?.thresholds ?? [
+                  50,
+                  75,
+                  100,
+                  125,
+                  150
+                ];
+                const lastHint = session.lastCompactionHint || 0;
+                for (const threshold of thresholds) {
+                  if (totalToolCalls >= threshold && lastHint < threshold) {
+                    const messageTemplate = compactionConfig?.message ?? "[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.";
+                    const message = messageTemplate.replace("${totalToolCalls}", String(totalToolCalls));
+                    tryInject(message);
+                    session.lastCompactionHint = threshold;
+                    break;
+                  }
+                }
+              }
+            }
+          }
           return;
         }
         const userScoringConfig = config2.context_budget?.scoring;
@@ -17750,6 +17835,77 @@ function createSystemEnhancerHook(config2, directory) {
             priority: 1,
             metadata: { contentType: "prose" }
           });
+        }
+        const sessionId_retro_b = _input.sessionID;
+        const activeAgent_retro_b = swarmState.activeAgent.get(sessionId_retro_b ?? "");
+        const isArchitect_b = !activeAgent_retro_b || stripKnownSwarmPrefix(activeAgent_retro_b) === "architect";
+        if (isArchitect_b) {
+          try {
+            const evidenceDir_b = path7.join(directory, ".swarm", "evidence");
+            if (fs3.existsSync(evidenceDir_b)) {
+              const files_b = fs3.readdirSync(evidenceDir_b).filter((f) => f.endsWith(".json")).sort().reverse();
+              for (const file2 of files_b.slice(0, 5)) {
+                const content_b = JSON.parse(fs3.readFileSync(path7.join(evidenceDir_b, file2), "utf-8"));
+                if (content_b.type === "retrospective") {
+                  const retro_b = content_b;
+                  const hints_b = [];
+                  if (retro_b.reviewer_rejections > 2) {
+                    hints_b.push(`Phase ${retro_b.phase_number} had ${retro_b.reviewer_rejections} reviewer rejections.`);
+                  }
+                  if (retro_b.top_rejection_reasons.length > 0) {
+                    hints_b.push(`Common rejection reasons: ${retro_b.top_rejection_reasons.join(", ")}.`);
+                  }
+                  if (retro_b.lessons_learned.length > 0) {
+                    hints_b.push(`Lessons: ${retro_b.lessons_learned.join("; ")}.`);
+                  }
+                  if (hints_b.length > 0) {
+                    const retroHint_b = `[SWARM RETROSPECTIVE] From Phase ${retro_b.phase_number}: ${hints_b.join(" ")}`;
+                    const retroText = retroHint_b.length <= 800 ? retroHint_b : retroHint_b.substring(0, 800) + "...";
+                    candidates.push({
+                      id: `candidate-${idCounter++}`,
+                      kind: "phase",
+                      text: retroText,
+                      tokens: estimateTokens(retroText),
+                      priority: 2,
+                      metadata: { contentType: "prose" }
+                    });
+                  }
+                  break;
+                }
+              }
+            }
+          } catch {}
+          const compactionConfig_b = config2.compaction_advisory;
+          if (compactionConfig_b?.enabled !== false && sessionId_retro_b) {
+            const session_b = swarmState.agentSessions.get(sessionId_retro_b);
+            if (session_b) {
+              const totalToolCalls_b = Array.from(swarmState.toolAggregates.values()).reduce((sum, agg) => sum + agg.count, 0);
+              const thresholds_b = compactionConfig_b?.thresholds ?? [
+                50,
+                75,
+                100,
+                125,
+                150
+              ];
+              const lastHint_b = session_b.lastCompactionHint || 0;
+              for (const threshold of thresholds_b) {
+                if (totalToolCalls_b >= threshold && lastHint_b < threshold) {
+                  const messageTemplate_b = compactionConfig_b?.message ?? "[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.";
+                  const compactionText = messageTemplate_b.replace("${totalToolCalls}", String(totalToolCalls_b));
+                  candidates.push({
+                    id: `candidate-${idCounter++}`,
+                    kind: "phase",
+                    text: compactionText,
+                    tokens: estimateTokens(compactionText),
+                    priority: 1,
+                    metadata: { contentType: "prose" }
+                  });
+                  session_b.lastCompactionHint = threshold;
+                  break;
+                }
+              }
+            }
+          }
         }
         const ranked = rankCandidates(candidates, effectiveConfig);
         for (const candidate of ranked) {
@@ -18677,10 +18833,10 @@ function mergeDefs2(...defs) {
 function cloneDef2(schema) {
   return mergeDefs2(schema._zod.def);
 }
-function getElementAtPath2(obj, path7) {
-  if (!path7)
+function getElementAtPath2(obj, path8) {
+  if (!path8)
     return obj;
-  return path7.reduce((acc, key) => acc?.[key], obj);
+  return path8.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject2(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -19039,11 +19195,11 @@ function aborted2(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues2(path7, issues) {
+function prefixIssues2(path8, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path7);
+    iss.path.unshift(path8);
     return iss;
   });
 }
@@ -19211,7 +19367,7 @@ function treeifyError2(error49, _mapper) {
     return issue3.message;
   };
   const result = { errors: [] };
-  const processError = (error50, path7 = []) => {
+  const processError = (error50, path8 = []) => {
     var _a2, _b;
     for (const issue3 of error50.issues) {
       if (issue3.code === "invalid_union" && issue3.errors.length) {
@@ -19221,7 +19377,7 @@ function treeifyError2(error49, _mapper) {
       } else if (issue3.code === "invalid_element") {
         processError({ issues: issue3.issues }, issue3.path);
       } else {
-        const fullpath = [...path7, ...issue3.path];
+        const fullpath = [...path8, ...issue3.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue3));
           continue;
@@ -19253,8 +19409,8 @@ function treeifyError2(error49, _mapper) {
 }
 function toDotPath2(_path) {
   const segs = [];
-  const path7 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path7) {
+  const path8 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path8) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -30294,14 +30450,14 @@ function validateBase(base) {
 function validatePaths(paths) {
   if (!paths)
     return null;
-  for (const path7 of paths) {
-    if (!path7 || path7.length === 0) {
+  for (const path8 of paths) {
+    if (!path8 || path8.length === 0) {
       return "empty path not allowed";
     }
-    if (path7.length > MAX_PATH_LENGTH) {
+    if (path8.length > MAX_PATH_LENGTH) {
       return `path exceeds maximum length of ${MAX_PATH_LENGTH}`;
     }
-    if (SHELL_METACHARACTERS.test(path7)) {
+    if (SHELL_METACHARACTERS.test(path8)) {
       return "path contains shell metacharacters";
     }
   }
@@ -30364,8 +30520,8 @@ var diff = tool({
         if (parts.length >= 3) {
           const additions = parseInt(parts[0]) || 0;
           const deletions = parseInt(parts[1]) || 0;
-          const path7 = parts[2];
-          files.push({ path: path7, additions, deletions });
+          const path8 = parts[2];
+          files.push({ path: path8, additions, deletions });
         }
       }
       const contractChanges = [];
@@ -30591,8 +30747,8 @@ Use these as DOMAIN values when delegating to @sme.`;
   }
 });
 // src/tools/file-extractor.ts
-import * as fs3 from "fs";
-import * as path7 from "path";
+import * as fs4 from "fs";
+import * as path8 from "path";
 var EXT_MAP = {
   python: ".py",
   py: ".py",
@@ -30654,8 +30810,8 @@ var extract_code_blocks = tool({
   execute: async (args) => {
     const { content, output_dir, prefix } = args;
     const targetDir = output_dir || process.cwd();
-    if (!fs3.existsSync(targetDir)) {
-      fs3.mkdirSync(targetDir, { recursive: true });
+    if (!fs4.existsSync(targetDir)) {
+      fs4.mkdirSync(targetDir, { recursive: true });
     }
     const pattern = /```(\w*)\n([\s\S]*?)```/g;
     const matches = [...content.matchAll(pattern)];
@@ -30670,16 +30826,16 @@ var extract_code_blocks = tool({
       if (prefix) {
         filename = `${prefix}_${filename}`;
       }
-      let filepath = path7.join(targetDir, filename);
-      const base = path7.basename(filepath, path7.extname(filepath));
-      const ext = path7.extname(filepath);
+      let filepath = path8.join(targetDir, filename);
+      const base = path8.basename(filepath, path8.extname(filepath));
+      const ext = path8.extname(filepath);
       let counter = 1;
-      while (fs3.existsSync(filepath)) {
-        filepath = path7.join(targetDir, `${base}_${counter}${ext}`);
+      while (fs4.existsSync(filepath)) {
+        filepath = path8.join(targetDir, `${base}_${counter}${ext}`);
         counter++;
       }
       try {
-        fs3.writeFileSync(filepath, code.trim(), "utf-8");
+        fs4.writeFileSync(filepath, code.trim(), "utf-8");
         savedFiles.push(filepath);
       } catch (error93) {
         errors5.push(`Failed to save ${filename}: ${error93 instanceof Error ? error93.message : String(error93)}`);

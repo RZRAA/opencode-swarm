@@ -12,6 +12,7 @@ export const EvidenceTypeSchema = z.enum([
 	'diff',
 	'approval',
 	'note',
+	'retrospective',
 ]);
 export type EvidenceType = z.infer<typeof EvidenceTypeSchema>;
 
@@ -93,6 +94,27 @@ export const NoteEvidenceSchema = BaseEvidenceSchema.extend({
 });
 export type NoteEvidence = z.infer<typeof NoteEvidenceSchema>;
 
+// Retrospective evidence schema
+export const RetrospectiveEvidenceSchema = BaseEvidenceSchema.extend({
+	type: z.literal('retrospective'),
+	// Execution metrics
+	phase_number: z.number().int().min(0),
+	total_tool_calls: z.number().int().min(0),
+	// Revision cycles
+	coder_revisions: z.number().int().min(0),
+	reviewer_rejections: z.number().int().min(0),
+	test_failures: z.number().int().min(0),
+	security_findings: z.number().int().min(0),
+	integration_issues: z.number().int().min(0),
+	// Task classification
+	task_count: z.number().int().min(1),
+	task_complexity: z.enum(['trivial', 'simple', 'moderate', 'complex']),
+	// Qualitative findings (structured)
+	top_rejection_reasons: z.array(z.string()).default([]),
+	lessons_learned: z.array(z.string()).max(5).default([]),
+});
+export type RetrospectiveEvidence = z.infer<typeof RetrospectiveEvidenceSchema>;
+
 // Discriminated union of all evidence types
 export const EvidenceSchema = z.discriminatedUnion('type', [
 	ReviewEvidenceSchema,
@@ -100,6 +122,7 @@ export const EvidenceSchema = z.discriminatedUnion('type', [
 	DiffEvidenceSchema,
 	ApprovalEvidenceSchema,
 	NoteEvidenceSchema,
+	RetrospectiveEvidenceSchema,
 ]);
 export type Evidence = z.infer<typeof EvidenceSchema>;
 

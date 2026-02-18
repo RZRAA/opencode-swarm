@@ -190,6 +190,23 @@ export const UIReviewConfigSchema = z.object({
 
 export type UIReviewConfig = z.infer<typeof UIReviewConfigSchema>;
 
+// Compaction advisory configuration (soft hints at tool-call thresholds)
+export const CompactionAdvisoryConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	thresholds: z
+		.array(z.number().int().min(10).max(500))
+		.default([50, 75, 100, 125, 150]),
+	message: z
+		.string()
+		.default(
+			'[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.',
+		),
+});
+
+export type CompactionAdvisoryConfig = z.infer<
+	typeof CompactionAdvisoryConfigSchema
+>;
+
 // Guardrails profile (per-agent overrides - all fields optional)
 export const GuardrailsProfileSchema = z.object({
 	max_tool_calls: z.number().min(0).max(1000).optional(),
@@ -396,6 +413,9 @@ export const PluginConfigSchema = z.object({
 
 	// UI/UX review configuration (designer agent)
 	ui_review: UIReviewConfigSchema.optional(),
+
+	// Compaction advisory configuration
+	compaction_advisory: CompactionAdvisoryConfigSchema.optional(),
 });
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

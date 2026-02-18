@@ -148,6 +148,12 @@ export declare const UIReviewConfigSchema: z.ZodObject<{
     trigger_keywords: z.ZodDefault<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>;
 export type UIReviewConfig = z.infer<typeof UIReviewConfigSchema>;
+export declare const CompactionAdvisoryConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    thresholds: z.ZodDefault<z.ZodArray<z.ZodNumber>>;
+    message: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>;
+export type CompactionAdvisoryConfig = z.infer<typeof CompactionAdvisoryConfigSchema>;
 export declare const GuardrailsProfileSchema: z.ZodObject<{
     max_tool_calls: z.ZodOptional<z.ZodNumber>;
     max_duration_minutes: z.ZodOptional<z.ZodNumber>;
@@ -317,6 +323,11 @@ export declare const PluginConfigSchema: z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;
         trigger_paths: z.ZodDefault<z.ZodArray<z.ZodString>>;
         trigger_keywords: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>;
+    compaction_advisory: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        thresholds: z.ZodDefault<z.ZodArray<z.ZodNumber>>;
+        message: z.ZodDefault<z.ZodString>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

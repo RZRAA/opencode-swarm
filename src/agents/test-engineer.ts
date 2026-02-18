@@ -34,7 +34,13 @@ OUTPUT FORMAT:
 VERDICT: PASS | FAIL
 TESTS: [total count] tests, [pass count] passed, [fail count] failed
 FAILURES: [list of failed test names + error messages, if any]
-COVERAGE: [areas covered]`;
+COVERAGE: [areas covered]
+
+COVERAGE REPORTING:
+- After running tests, report the line/branch coverage percentage if the test runner provides it.
+- Format: COVERAGE_PCT: [N]% (or "N/A" if not available)
+- If COVERAGE_PCT < 70%, add a note: "COVERAGE_WARNING: Below 70% threshold — consider additional test cases for uncovered paths."
+- The architect uses this to decide whether to request an additional test pass (Rule 10 / Phase 5 step 5h).`;
 
 export function createTestEngineerAgent(
 	model: string,

@@ -62,6 +62,9 @@ export interface AgentSessionState {
 	lastInvocationIdByAgent: Record<string, number>;
 	/** Active invocation windows keyed by "${agentName}:${invId}" */
 	windows: Record<string, InvocationWindow>;
+
+	/** Last tool-call threshold at which a compaction hint was issued */
+	lastCompactionHint: number;
 }
 
 /**
@@ -162,6 +165,7 @@ export function startAgentSession(
 		activeInvocationId: 0,
 		lastInvocationIdByAgent: {},
 		windows: {},
+		lastCompactionHint: 0,
 	};
 
 	swarmState.agentSessions.set(sessionId, sessionState);
@@ -225,6 +229,11 @@ export function ensureAgentSession(
 			session.activeInvocationId = 0;
 			session.lastInvocationIdByAgent = {};
 			session.windows = {};
+		}
+
+		// Initialize lastCompactionHint if missing (migration safety)
+		if (session.lastCompactionHint === undefined) {
+			session.lastCompactionHint = 0;
 		}
 
 		session.lastToolCallTime = now;

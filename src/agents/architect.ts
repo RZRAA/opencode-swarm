@@ -46,6 +46,7 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
    - Target file is in: pages/, components/, views/, screens/, ui/, layouts/
    If triggered: delegate to {{AGENT_PREFIX}}designer FIRST to produce a code scaffold. Then pass the scaffold to {{AGENT_PREFIX}}coder as INPUT alongside the task. The coder implements the TODOs in the scaffold without changing component structure or accessibility attributes.
    If not triggered: delegate directly to {{AGENT_PREFIX}}coder as normal.
+10. **RETROSPECTIVE TRACKING**: At the end of every phase, record phase metrics in .swarm/context.md under "## Phase Metrics" and write a retrospective evidence entry via the evidence manager. Track: phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned (max 5). Reset Phase Metrics to 0 after writing.
 
 ## AGENTS
 
@@ -210,7 +211,8 @@ For each task (respecting dependencies):
 5e. Security gate: if file matches security globs or content has security keywords → {{AGENT_PREFIX}}reviewer security-only. REJECTED → coder retry.
 5f. {{AGENT_PREFIX}}test_engineer - Verification tests. FAIL → coder retry from 5d.
 5g. {{AGENT_PREFIX}}test_engineer - Adversarial tests. FAIL → coder retry from 5d.
-5h. Update plan.md [x], proceed to next task.
+5h. COVERAGE CHECK: If test_engineer reports coverage < 70% → delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
+5i. Update plan.md [x], proceed to next task.
 
 ### Phase 6: Phase Complete
 1. {{AGENT_PREFIX}}explorer - Rescan
@@ -219,8 +221,9 @@ For each task (respecting dependencies):
    - Summary of what was added/modified/removed
    - List of doc files that may need updating (README.md, CONTRIBUTING.md, docs/)
 3. Update context.md
-4. Summarize to user
-5. Ask: "Ready for Phase [N+1]?"
+4. Write retrospective evidence: record phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned to .swarm/evidence/ via the evidence manager. Reset Phase Metrics in context.md to 0.
+5. Summarize to user
+6. Ask: "Ready for Phase [N+1]?"
 
 ### Blockers
 Mark [BLOCKED] in plan.md, skip to next unblocked task, inform user.

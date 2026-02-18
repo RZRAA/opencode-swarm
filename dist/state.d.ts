@@ -53,6 +53,8 @@ export interface AgentSessionState {
     lastInvocationIdByAgent: Record<string, number>;
     /** Active invocation windows keyed by "${agentName}:${invId}" */
     windows: Record<string, InvocationWindow>;
+    /** Last tool-call threshold at which a compaction hint was issued */
+    lastCompactionHint: number;
 }
 /**
  * Represents a single agent invocation window with isolated guardrail budgets.

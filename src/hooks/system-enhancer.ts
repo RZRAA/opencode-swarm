@@ -6,8 +6,11 @@
  * Reads plan.md and injects phase context into the system prompt.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { PluginConfig } from '../config';
 import { DEFAULT_SCORING_CONFIG } from '../config/constants';
+import type { RetrospectiveEvidence } from '../config/evidence-schema';
 import { stripKnownSwarmPrefix } from '../config/schema';
 import { loadPlan } from '../plan/manager';
 import { swarmState } from '../state';
@@ -180,6 +183,97 @@ export function createSystemEnhancerHook(
 							);
 						}
 
+						// v6.2: Retrospective injection — architect-only, most recent retro
+						const sessionId_retro = _input.sessionID;
+						const activeAgent_retro = swarmState.activeAgent.get(
+							sessionId_retro ?? '',
+						);
+						const isArchitect =
+							!activeAgent_retro ||
+							stripKnownSwarmPrefix(activeAgent_retro) === 'architect';
+
+						if (isArchitect) {
+							try {
+								const evidenceDir = path.join(directory, '.swarm', 'evidence');
+								if (fs.existsSync(evidenceDir)) {
+									const files = fs
+										.readdirSync(evidenceDir)
+										.filter((f) => f.endsWith('.json'))
+										.sort()
+										.reverse();
+
+									for (const file of files.slice(0, 5)) {
+										const content = JSON.parse(
+											fs.readFileSync(path.join(evidenceDir, file), 'utf-8'),
+										);
+										if (content.type === 'retrospective') {
+											const retro = content as RetrospectiveEvidence;
+											const hints: string[] = [];
+
+											if (retro.reviewer_rejections > 2) {
+												hints.push(
+													`Phase ${retro.phase_number} had ${retro.reviewer_rejections} reviewer rejections.`,
+												);
+											}
+											if (retro.top_rejection_reasons.length > 0) {
+												hints.push(
+													`Common rejection reasons: ${retro.top_rejection_reasons.join(', ')}.`,
+												);
+											}
+											if (retro.lessons_learned.length > 0) {
+												hints.push(
+													`Lessons: ${retro.lessons_learned.join('; ')}.`,
+												);
+											}
+
+											if (hints.length > 0) {
+												const retroHint = `[SWARM RETROSPECTIVE] From Phase ${retro.phase_number}: ${hints.join(' ')}`;
+												if (retroHint.length <= 800) {
+													tryInject(retroHint);
+												} else {
+													tryInject(retroHint.substring(0, 800) + '...');
+												}
+											}
+											break;
+										}
+									}
+								}
+							} catch {
+								// Silently skip if evidence dir missing or unreadable
+							}
+
+							// v6.2: Soft compaction advisory
+							const compactionConfig = config.compaction_advisory;
+							if (compactionConfig?.enabled !== false && sessionId_retro) {
+								const session = swarmState.agentSessions.get(sessionId_retro);
+								if (session) {
+									const totalToolCalls = Array.from(
+										swarmState.toolAggregates.values(),
+									).reduce((sum, agg) => sum + agg.count, 0);
+
+									const thresholds = compactionConfig?.thresholds ?? [
+										50, 75, 100, 125, 150,
+									];
+									const lastHint = session.lastCompactionHint || 0;
+
+									for (const threshold of thresholds) {
+										if (totalToolCalls >= threshold && lastHint < threshold) {
+											const messageTemplate =
+												compactionConfig?.message ??
+												'[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.';
+											const message = messageTemplate.replace(
+												'${totalToolCalls}',
+												String(totalToolCalls),
+											);
+											tryInject(message);
+											session.lastCompactionHint = threshold;
+											break;
+										}
+									}
+								}
+							}
+						}
+
 						return;
 					}
 
@@ -337,6 +431,111 @@ export function createSystemEnhancerHook(
 							priority: 1,
 							metadata: { contentType: 'prose' as ContentType },
 						});
+					}
+
+					// v6.2: Retrospective injection — architect-only, most recent retro
+					const sessionId_retro_b = _input.sessionID;
+					const activeAgent_retro_b = swarmState.activeAgent.get(
+						sessionId_retro_b ?? '',
+					);
+					const isArchitect_b =
+						!activeAgent_retro_b ||
+						stripKnownSwarmPrefix(activeAgent_retro_b) === 'architect';
+
+					if (isArchitect_b) {
+						try {
+							const evidenceDir_b = path.join(directory, '.swarm', 'evidence');
+							if (fs.existsSync(evidenceDir_b)) {
+								const files_b = fs
+									.readdirSync(evidenceDir_b)
+									.filter((f) => f.endsWith('.json'))
+									.sort()
+									.reverse();
+
+								for (const file of files_b.slice(0, 5)) {
+									const content_b = JSON.parse(
+										fs.readFileSync(path.join(evidenceDir_b, file), 'utf-8'),
+									);
+									if (content_b.type === 'retrospective') {
+										const retro_b = content_b as RetrospectiveEvidence;
+										const hints_b: string[] = [];
+
+										if (retro_b.reviewer_rejections > 2) {
+											hints_b.push(
+												`Phase ${retro_b.phase_number} had ${retro_b.reviewer_rejections} reviewer rejections.`,
+											);
+										}
+										if (retro_b.top_rejection_reasons.length > 0) {
+											hints_b.push(
+												`Common rejection reasons: ${retro_b.top_rejection_reasons.join(', ')}.`,
+											);
+										}
+										if (retro_b.lessons_learned.length > 0) {
+											hints_b.push(
+												`Lessons: ${retro_b.lessons_learned.join('; ')}.`,
+											);
+										}
+
+										if (hints_b.length > 0) {
+											const retroHint_b = `[SWARM RETROSPECTIVE] From Phase ${retro_b.phase_number}: ${hints_b.join(' ')}`;
+											const retroText =
+												retroHint_b.length <= 800
+													? retroHint_b
+													: retroHint_b.substring(0, 800) + '...';
+											candidates.push({
+												id: `candidate-${idCounter++}`,
+												kind: 'phase' as ContextCandidate['kind'],
+												text: retroText,
+												tokens: estimateTokens(retroText),
+												priority: 2,
+												metadata: { contentType: 'prose' as ContentType },
+											});
+										}
+										break;
+									}
+								}
+							}
+						} catch {
+							// Silently skip if evidence dir missing or unreadable
+						}
+
+						// v6.2: Soft compaction advisory
+						const compactionConfig_b = config.compaction_advisory;
+						if (compactionConfig_b?.enabled !== false && sessionId_retro_b) {
+							const session_b = swarmState.agentSessions.get(sessionId_retro_b);
+							if (session_b) {
+								const totalToolCalls_b = Array.from(
+									swarmState.toolAggregates.values(),
+								).reduce((sum, agg) => sum + agg.count, 0);
+
+								const thresholds_b = compactionConfig_b?.thresholds ?? [
+									50, 75, 100, 125, 150,
+								];
+								const lastHint_b = session_b.lastCompactionHint || 0;
+
+								for (const threshold of thresholds_b) {
+									if (totalToolCalls_b >= threshold && lastHint_b < threshold) {
+										const messageTemplate_b =
+											compactionConfig_b?.message ??
+											'[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.';
+										const compactionText = messageTemplate_b.replace(
+											'${totalToolCalls}',
+											String(totalToolCalls_b),
+										);
+										candidates.push({
+											id: `candidate-${idCounter++}`,
+											kind: 'phase' as ContextCandidate['kind'],
+											text: compactionText,
+											tokens: estimateTokens(compactionText),
+											priority: 1,
+											metadata: { contentType: 'prose' as ContentType },
+										});
+										session_b.lastCompactionHint = threshold;
+										break;
+									}
+								}
+							}
+						}
 					}
 
 					// Rank candidates

@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-6.1.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-6.2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
-  <img src="https://img.shields.io/badge/tests-1280-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1391-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">🐝 OpenCode Swarm</h1>
@@ -233,6 +233,21 @@ Current Phase: 2
 
 **Start a new session tomorrow?** The Architect reads these files and picks up exactly where you left off.
 
+### Evidence Types
+
+Each task in `.swarm/evidence/` contains structured evidence bundles with typed entries:
+
+| Type | Purpose | Key Fields |
+|------|---------|------------|
+| `review` | Code review verdict | `verdict`, `risk`, `issues[]` |
+| `test` | Test run results | `verdict`, `tests_passed`, `tests_failed`, `coverage` |
+| `diff` | Git diff summary | `files_changed[]`, `additions`, `deletions` |
+| `approval` | Stakeholder sign-off | `approver`, `notes` |
+| `note` | General observations | `content` |
+| `retrospective` | Phase metrics & lessons | `phase_number`, `total_tool_calls`, `coder_revisions`, `reviewer_rejections`, `test_failures`, `security_findings`, `task_count`, `task_complexity`, `top_rejection_reasons[]`, `lessons_learned[]` |
+
+**Retrospective Evidence** (v6.2.0+): After each phase completes, the architect writes a retrospective evidence bundle capturing what went well and what didn't. The system enhancer injects the most recent retrospective as a `[SWARM RETROSPECTIVE]` hint at the start of the next phase, enabling continuous improvement across phases.
+
 ---
 
 ## Heterogeneous Models = Better Code
@@ -342,6 +357,12 @@ bunx opencode-swarm uninstall --clean
 ---
 
 ## What's New
+
+### v6.2.0 — System Intelligence
+- **Retrospective evidence** — New evidence type that captures phase metrics (tool calls, revisions, rejections, test failures, security findings) and lessons learned. Architect writes it after each phase; system enhancer injects the most recent one as a `[SWARM RETROSPECTIVE]` hint for the next phase, enabling continuous improvement across phases.
+- **Soft compaction advisory** — System enhancer injects a `[SWARM HINT]` when the architect's tool-call count crosses configurable thresholds (default 50/75/100/125/150). A `lastCompactionHint` guard prevents re-injection at the same threshold. Configurable via `compaction_advisory` block.
+- **Coverage reporting** — Test engineer now reports line/branch/function coverage percentages and flags files below 70%. Architect uses this in Phase 5 step 5d to request additional test passes when coverage is insufficient.
+- **111 new tests** — 1391 total tests across 62+ files (up from 1280 in v6.1.2).
 
 ### v6.1.2 — Guardrails Remediation
 - **Fail-safe config validation** — Config validation failures now disable guardrails as a safety precaution (previously Zod defaults could silently re-enable them).
@@ -593,6 +614,22 @@ Control whether contract change detection triggers impact analysis:
 }
 ```
 
+### Compaction Advisory
+
+Control when the system hints about context compaction thresholds:
+
+```jsonc
+{
+  "compaction_advisory": {
+    "enabled": true,                          // default: true
+    "thresholds": [50, 75, 100, 125, 150],    // tool-call counts that trigger hints
+    "message": "Large context may benefit from compaction"  // custom message
+  }
+}
+```
+
+When the architect's tool-call count crosses a threshold, the system enhancer injects a `[SWARM HINT]` suggesting context management. Each threshold fires only once per session (tracked via `lastCompactionHint`).
+
 > **Architect is exempt/unlimited by default:** The architect agent has no guardrail limits by default. To override, add a `profiles.architect` entry in your guardrails config.
 
 ### Per-Invocation Budgets
@@ -659,7 +696,7 @@ bun test
 bun test tests/unit/config/schema.test.ts
 ```
 
-1280 tests across 57+ files covering config, tools, agents, hooks, commands, state, guardrails, evidence, plan schemas, circuit breaker race conditions, invocation windows, multi-invocation isolation, security categories, review/integration schemas, and diff tool. Uses Bun's built-in test runner — zero additional test dependencies.
+1391 tests across 62+ files covering config, tools, agents, hooks, commands, state, guardrails, evidence, plan schemas, circuit breaker race conditions, invocation windows, multi-invocation isolation, security categories, review/integration schemas, and diff tool. Uses Bun's built-in test runner — zero additional test dependencies.
 
 ## Troubleshooting
 

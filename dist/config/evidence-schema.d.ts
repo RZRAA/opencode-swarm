@@ -8,6 +8,7 @@ export declare const EvidenceTypeSchema: z.ZodEnum<{
     diff: "diff";
     approval: "approval";
     note: "note";
+    retrospective: "retrospective";
 }>;
 export type EvidenceType = z.infer<typeof EvidenceTypeSchema>;
 export declare const EvidenceVerdictSchema: z.ZodEnum<{
@@ -26,6 +27,7 @@ export declare const BaseEvidenceSchema: z.ZodObject<{
         diff: "diff";
         approval: "approval";
         note: "note";
+        retrospective: "retrospective";
     }>;
     timestamp: z.ZodString;
     agent: z.ZodString;
@@ -147,6 +149,38 @@ export declare const NoteEvidenceSchema: z.ZodObject<{
     type: z.ZodLiteral<"note">;
 }, z.core.$strip>;
 export type NoteEvidence = z.infer<typeof NoteEvidenceSchema>;
+export declare const RetrospectiveEvidenceSchema: z.ZodObject<{
+    task_id: z.ZodString;
+    timestamp: z.ZodString;
+    agent: z.ZodString;
+    verdict: z.ZodEnum<{
+        pass: "pass";
+        fail: "fail";
+        approved: "approved";
+        rejected: "rejected";
+        info: "info";
+    }>;
+    summary: z.ZodString;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    type: z.ZodLiteral<"retrospective">;
+    phase_number: z.ZodNumber;
+    total_tool_calls: z.ZodNumber;
+    coder_revisions: z.ZodNumber;
+    reviewer_rejections: z.ZodNumber;
+    test_failures: z.ZodNumber;
+    security_findings: z.ZodNumber;
+    integration_issues: z.ZodNumber;
+    task_count: z.ZodNumber;
+    task_complexity: z.ZodEnum<{
+        trivial: "trivial";
+        simple: "simple";
+        moderate: "moderate";
+        complex: "complex";
+    }>;
+    top_rejection_reasons: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    lessons_learned: z.ZodDefault<z.ZodArray<z.ZodString>>;
+}, z.core.$strip>;
+export type RetrospectiveEvidence = z.infer<typeof RetrospectiveEvidenceSchema>;
 export declare const EvidenceSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     task_id: z.ZodString;
     timestamp: z.ZodString;
@@ -244,6 +278,36 @@ export declare const EvidenceSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     summary: z.ZodString;
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     type: z.ZodLiteral<"note">;
+}, z.core.$strip>, z.ZodObject<{
+    task_id: z.ZodString;
+    timestamp: z.ZodString;
+    agent: z.ZodString;
+    verdict: z.ZodEnum<{
+        pass: "pass";
+        fail: "fail";
+        approved: "approved";
+        rejected: "rejected";
+        info: "info";
+    }>;
+    summary: z.ZodString;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+    type: z.ZodLiteral<"retrospective">;
+    phase_number: z.ZodNumber;
+    total_tool_calls: z.ZodNumber;
+    coder_revisions: z.ZodNumber;
+    reviewer_rejections: z.ZodNumber;
+    test_failures: z.ZodNumber;
+    security_findings: z.ZodNumber;
+    integration_issues: z.ZodNumber;
+    task_count: z.ZodNumber;
+    task_complexity: z.ZodEnum<{
+        trivial: "trivial";
+        simple: "simple";
+        moderate: "moderate";
+        complex: "complex";
+    }>;
+    top_rejection_reasons: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    lessons_learned: z.ZodDefault<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>], "type">;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export declare const EvidenceBundleSchema: z.ZodObject<{
@@ -346,6 +410,36 @@ export declare const EvidenceBundleSchema: z.ZodObject<{
         summary: z.ZodString;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
         type: z.ZodLiteral<"note">;
+    }, z.core.$strip>, z.ZodObject<{
+        task_id: z.ZodString;
+        timestamp: z.ZodString;
+        agent: z.ZodString;
+        verdict: z.ZodEnum<{
+            pass: "pass";
+            fail: "fail";
+            approved: "approved";
+            rejected: "rejected";
+            info: "info";
+        }>;
+        summary: z.ZodString;
+        metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+        type: z.ZodLiteral<"retrospective">;
+        phase_number: z.ZodNumber;
+        total_tool_calls: z.ZodNumber;
+        coder_revisions: z.ZodNumber;
+        reviewer_rejections: z.ZodNumber;
+        test_failures: z.ZodNumber;
+        security_findings: z.ZodNumber;
+        integration_issues: z.ZodNumber;
+        task_count: z.ZodNumber;
+        task_complexity: z.ZodEnum<{
+            trivial: "trivial";
+            simple: "simple";
+            moderate: "moderate";
+            complex: "complex";
+        }>;
+        top_rejection_reasons: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        lessons_learned: z.ZodDefault<z.ZodArray<z.ZodString>>;
     }, z.core.$strip>], "type">>>;
     created_at: z.ZodString;
     updated_at: z.ZodString;

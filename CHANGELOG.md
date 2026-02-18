@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-02-19
+
+### Added
+- **Retrospective evidence type** — New `RetrospectiveEvidenceSchema` added to `src/config/evidence-schema.ts`. Fields: `phase_number`, `total_tool_calls`, `coder_revisions`, `reviewer_rejections`, `test_failures`, `security_findings`, `integration_issues`, `task_count`, `task_complexity` (enum: `low | medium | high | mixed`), `top_rejection_reasons` (string array), `lessons_learned` (string array, max 5). Discriminated union `EvidenceSchema` now includes `retrospective` type. Fully additive — existing evidence files unaffected.
+- **Retrospective injection in system enhancer** — After each phase completes, the most recent `retrospective` evidence bundle is loaded and injected as a `[SWARM RETROSPECTIVE]` hint into architect sessions (architect-only, capped at 800 chars). Skipped when all rejection counts are zero and `lessons_learned` is empty. Injected in both legacy path A and scoring path B in `src/hooks/system-enhancer.ts`.
+- **Soft compaction advisory** — System enhancer monitors architect session tool-call counts and injects a `[SWARM HINT]` advisory at configurable thresholds (default: 50, 75, 100, 125, 150). A `lastCompactionHint` guard on `AgentSessionState` prevents repeated injection at the same threshold. Non-blocking — architect may ignore.
+- **`CompactionAdvisoryConfigSchema`** — Optional `compaction_advisory` config block in `PluginConfigSchema`: `{ enabled: boolean (default: true), thresholds: number[] (default: [50,75,100,125,150]), message: string (default: standard advisory text) }`. All fields optional with defaults.
+- **`lastCompactionHint: number` on `AgentSessionState`** — Initialized to `0` in `ensureAgentSession`. Tracks the last threshold at which a compaction advisory was injected; prevents duplicate advisories.
+- **Architect Rule 10 — RETROSPECTIVE TRACKING** — After each phase completes, architect writes a `retrospective` evidence bundle to `.swarm/evidence/<phase-id>/` capturing phase metrics (coder revisions, reviewer rejections, test failures, etc.) and `lessons_learned`. Injected into `src/agents/architect.ts`.
+- **Architect Phase 5 step 5d COVERAGE check** — After verification tests pass, if coverage < 70% architect requests an additional test pass. Soft guideline, not a hard gate.
+- **Architect Phase 6 retrospective write step** — Phase 6 now includes a step to write retrospective evidence before summarizing to the user.
+- **Test engineer COVERAGE REPORTING section** — `src/agents/test-engineer.ts` prompt now includes a `COVERAGE REPORTING` section after `OUTPUT FORMAT`, instructing the test engineer to report line/branch/function coverage percentages and flag files below 70%.
+
+### Tests
+- 14 new tests: `RetrospectiveEvidenceSchema` validation (4), system-enhancer retrospective injection (4), system-enhancer compaction advisory (6).
+- Total: 1391 tests across 60 files, all passing.
+
 ## [6.1.2] - 2026-02-18
 
 ### Fixed
