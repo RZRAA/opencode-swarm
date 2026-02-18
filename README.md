@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-6.1.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-6.1.2-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
@@ -342,6 +342,12 @@ bunx opencode-swarm uninstall --clean
 ---
 
 ## What's New
+
+### v6.1.2 — Guardrails Remediation
+- **Fail-safe config validation** — Config validation failures now disable guardrails as a safety precaution (previously Zod defaults could silently re-enable them).
+- **Architect exemption fix** — Architect/orchestrator sessions can no longer inherit 30-minute base limits during delegation race conditions.
+- **Explicit disable always wins** — `guardrails.enabled: false` in config is now always honored, even when the config was loaded from file.
+- **Internal map synchronization** — `startAgentSession()` now keeps `activeAgent` and `agentSessions` maps in sync for consistent state tracking.
 
 ### v6.1.1 — Security Fix & Tech Debt
 - **Security hardening (`_loadedFromFile`)** — Fixed a critical vulnerability where an internal loader flag could be injected via JSON config to bypass guardrails. The flag is now purely internal and no longer part of the public schema.

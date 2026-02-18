@@ -585,7 +585,7 @@ Agent awareness tracks what each agent is doing and shares relevant context acro
 ### Shared State
 
 `src/state.ts` exports a module-scoped singleton (`swarmState`) with:
-- `activeAgents: Map<sessionId, agentName>` — Which agent is active in each session (updated by chat.message hook)
+- `activeAgent: Map<sessionId, agentName>` — Which agent is active in each session (updated by chat.message hook)
 - `agentSessions: Map<sessionId, AgentSessionState>` — Per-session guardrail tracking (toolCallCount, startTime, delegationActive flag)
 - `eventCounter: number` — Tracks events for flush threshold
 - `flushLock: Promise | null` — Serializes context.md writes
@@ -613,7 +613,7 @@ chat.message hook                tool.execute.before hook         tool.execute.a
 │  (strip prefix:                │  swarmState                    │  (success heuristic)
 │   paid_, local_,               ├─ Log: "agent X using          ├─ Increment event counter
 │   mega_, default_)             │  tool Y"                       ├─ If counter >= 20:
-├─ Update activeAgents           │                                │  └─ Flush to context.md
+├─ Update activeAgent            │                                │  └─ Flush to context.md
 │  map                           │                                │     (promise-based lock)
 │                                │                                │
 ```

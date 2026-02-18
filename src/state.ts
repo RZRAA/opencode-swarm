@@ -165,6 +165,9 @@ export function startAgentSession(
 	};
 
 	swarmState.agentSessions.set(sessionId, sessionState);
+	// Keep activeAgent map in sync so guardrails can always resolve the agent name
+	// without falling back to ORCHESTRATOR_NAME for legitimately-named sessions.
+	swarmState.activeAgent.set(sessionId, agentName);
 }
 
 /**

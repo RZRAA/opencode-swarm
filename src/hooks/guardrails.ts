@@ -80,8 +80,11 @@ export function createGuardrailsHooks(config: GuardrailsConfig): {
 				}
 			}
 
-			// Ensure session exists — uses activeAgent map as fallback for agent name
-			const agentName = swarmState.activeAgent.get(input.sessionID);
+			// Ensure session exists — uses activeAgent map as fallback for agent name.
+			// Fall back to ORCHESTRATOR_NAME (never undefined) to prevent seeding an
+			// "unknown" identity that would inherit base guardrails (30 min limit).
+			const agentName =
+				swarmState.activeAgent.get(input.sessionID) ?? ORCHESTRATOR_NAME;
 			const session = ensureAgentSession(input.sessionID, agentName);
 
 			// SECOND exemption check: after session resolution

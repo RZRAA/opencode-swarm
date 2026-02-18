@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.2] - 2026-02-18
+
+### Fixed
+- **Fail-safe disable guardrails on config validation failure** — `loadPluginConfig()` previously returned `PluginConfigSchema.parse({})` on merged-config validation failure, which silently re-enabled guardrails via Zod defaults (`enabled: true`, `max_duration_minutes: 30`). Now returns `PluginConfigSchema.parse({ guardrails: { enabled: false } })`, matching the warning message that claims guardrails are disabled.
+- **Prevent `unknown` agent session seeding in guardrails hook** — `createGuardrailsHooks` called `ensureAgentSession(sessionID, agentName)` where `agentName` could be `undefined` (when `activeAgent` had not yet been set for the session). This seeded the session identity as `"unknown"`, which has no built-in profile and fell back to base guardrails (30-minute limit). Subsequent architect-exemption checks never matched. Fixed by falling back to `ORCHESTRATOR_NAME` via `?? ORCHESTRATOR_NAME` so the session is always seeded with a valid identity.
+- **Honor explicit `guardrails.enabled: false` in fallback logic** — `src/index.ts` guardrails fallback only disabled guardrails when `loadedFromFile === false`. If a config file existed but validation failed, `loadedFromFile` remained `true` and guardrails re-enabled via defaults. Now checks `config.guardrails?.enabled === false` first (highest priority), ensuring a deliberate disable survives even when other config parts are invalid.
+
 ## [6.1.1] - 2026-02-18
 
 ### Security

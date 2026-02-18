@@ -14010,7 +14010,9 @@ function loadPluginConfig(directory) {
     console.warn("[opencode-swarm] Merged config validation failed:");
     console.warn(result.error.format());
     console.warn("[opencode-swarm] \u26A0\uFE0F Guardrails will be DISABLED as a safety precaution. Fix the config file to restore normal operation.");
-    return PluginConfigSchema.parse({});
+    return PluginConfigSchema.parse({
+      guardrails: { enabled: false }
+    });
   }
   return result.data;
 }
@@ -17268,7 +17270,7 @@ function createGuardrailsHooks(config2) {
           return;
         }
       }
-      const agentName = swarmState.activeAgent.get(input.sessionID);
+      const agentName = swarmState.activeAgent.get(input.sessionID) ?? ORCHESTRATOR_NAME;
       const session = ensureAgentSession(input.sessionID, agentName);
       const resolvedName = stripKnownSwarmPrefix(session.agentName);
       if (resolvedName === ORCHESTRATOR_NAME) {
@@ -30824,7 +30826,7 @@ var OpenCodeSwarm = async (ctx) => {
   const commandHandler = createSwarmCommandHandler(ctx.directory, Object.fromEntries(agentDefinitions.map((agent) => [agent.name, agent])));
   const activityHooks = createAgentActivityHooks(config3, ctx.directory);
   const delegationGateHandler = createDelegationGateHook(config3);
-  const guardrailsFallback = loadedFromFile ? config3.guardrails ?? {} : { ...config3.guardrails, enabled: false };
+  const guardrailsFallback = config3.guardrails?.enabled === false ? { ...config3.guardrails, enabled: false } : loadedFromFile ? config3.guardrails ?? {} : { ...config3.guardrails, enabled: false };
   const guardrailsConfig = GuardrailsConfigSchema.parse(guardrailsFallback);
   const delegationHandler = createDelegationTrackerHook(config3, guardrailsConfig.enabled);
   const guardrailsHooks = createGuardrailsHooks(guardrailsConfig);

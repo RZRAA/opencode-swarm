@@ -55,11 +55,15 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 	);
 	const activityHooks = createAgentActivityHooks(config, ctx.directory);
 	const delegationGateHandler = createDelegationGateHook(config);
-	// Fail-safe: if config was NOT loaded from file (fallback defaults),
-	// default guardrails to disabled to prevent silent re-enablement
-	const guardrailsFallback = loadedFromFile
-		? (config.guardrails ?? {})
-		: { ...config.guardrails, enabled: false };
+	// Fail-safe: honor explicit guardrails.enabled === false first (highest priority),
+	// then fall back to file-loaded config or disabled-by-default when no file exists.
+	// This ensures a deliberate disable survives even if other config parts are invalid.
+	const guardrailsFallback =
+		config.guardrails?.enabled === false
+			? { ...config.guardrails, enabled: false }
+			: loadedFromFile
+				? (config.guardrails ?? {})
+				: { ...config.guardrails, enabled: false };
 	const guardrailsConfig = GuardrailsConfigSchema.parse(guardrailsFallback);
 	const delegationHandler = createDelegationTrackerHook(
 		config,

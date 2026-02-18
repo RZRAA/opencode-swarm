@@ -143,7 +143,9 @@ export function loadPluginConfig(directory: string): PluginConfig {
 		console.warn(
 			'[opencode-swarm] ⚠️ Guardrails will be DISABLED as a safety precaution. Fix the config file to restore normal operation.',
 		);
-		return PluginConfigSchema.parse({});
+		return PluginConfigSchema.parse({
+			guardrails: { enabled: false },
+		});
 	}
 
 	return result.data;
