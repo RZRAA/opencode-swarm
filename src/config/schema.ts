@@ -442,6 +442,14 @@ export function resolveGuardrailsConfig(
 	return { ...base, ...builtIn, ...userProfile };
 }
 
+// Checkpoint configuration
+export const CheckpointConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	auto_checkpoint_threshold: z.number().min(1).max(20).default(3),
+});
+
+export type CheckpointConfig = z.infer<typeof CheckpointConfigSchema>;
+
 // Main plugin configuration
 export const PluginConfigSchema = z.object({
 	// Legacy: Per-agent overrides (default swarm)
@@ -496,6 +504,9 @@ export const PluginConfigSchema = z.object({
 
 	// Secretscan configuration
 	secretscan: SecretscanConfigSchema.optional(),
+
+	// Checkpoint configuration
+	checkpoint: CheckpointConfigSchema.optional(),
 });
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

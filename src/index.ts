@@ -23,6 +23,7 @@ import {
 } from './hooks';
 import { ensureAgentSession, swarmState } from './state';
 import {
+	checkpoint,
 	detect_domains,
 	diff,
 	extract_code_blocks,
@@ -31,6 +32,8 @@ import {
 	lint,
 	retrieve_summary,
 	secretscan,
+	symbols,
+	test_runner,
 } from './tools';
 import { log } from './utils';
 
@@ -106,6 +109,7 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 
 		// Register tools
 		tool: {
+			checkpoint,
 			detect_domains,
 			extract_code_blocks,
 			gitingest,
@@ -114,6 +118,8 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			diff,
 			retrieve_summary,
 			secretscan,
+			symbols,
+			test_runner,
 		},
 
 		// Configure OpenCode - merge agents into config

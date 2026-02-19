@@ -240,6 +240,11 @@ export declare function stripKnownSwarmPrefix(name: string): string;
  * @returns The effective guardrails configuration for the agent
  */
 export declare function resolveGuardrailsConfig(base: GuardrailsConfig, agentName?: string): GuardrailsConfig;
+export declare const CheckpointConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    auto_checkpoint_threshold: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export type CheckpointConfig = z.infer<typeof CheckpointConfigSchema>;
 export declare const PluginConfigSchema: z.ZodObject<{
     agents: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
         model: z.ZodOptional<z.ZodString>;
@@ -370,6 +375,10 @@ export declare const PluginConfigSchema: z.ZodObject<{
         patterns: z.ZodDefault<z.ZodArray<z.ZodString>>;
         exclude: z.ZodDefault<z.ZodArray<z.ZodString>>;
         extensions: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>;
+    checkpoint: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        auto_checkpoint_threshold: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

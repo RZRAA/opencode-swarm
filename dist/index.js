@@ -13997,6 +13997,10 @@ function resolveGuardrailsConfig(base, agentName) {
   }
   return { ...base, ...builtIn, ...userProfile };
 }
+var CheckpointConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  auto_checkpoint_threshold: exports_external.number().min(1).max(20).default(3)
+});
 var PluginConfigSchema = exports_external.object({
   agents: exports_external.record(exports_external.string(), AgentOverrideConfigSchema).optional(),
   swarms: exports_external.record(exports_external.string(), SwarmConfigSchema).optional(),
@@ -14014,7 +14018,8 @@ var PluginConfigSchema = exports_external.object({
   ui_review: UIReviewConfigSchema.optional(),
   compaction_advisory: CompactionAdvisoryConfigSchema.optional(),
   lint: LintConfigSchema.optional(),
-  secretscan: SecretscanConfigSchema.optional()
+  secretscan: SecretscanConfigSchema.optional(),
+  checkpoint: CheckpointConfigSchema.optional()
 });
 
 // src/config/loader.ts
@@ -14162,7 +14167,7 @@ var ARCHITECT_PROMPT = `You are Architect - orchestrator of a multi-agent swarm.
 ## IDENTITY
 
 Swarm: {{SWARM_ID}}
-Your agents: {{AGENT_PREFIX}}explorer, {{AGENT_PREFIX}}sme, {{AGENT_PREFIX}}coder, {{AGENT_PREFIX}}reviewer, {{AGENT_PREFIX}}critic, {{AGENT_PREFIX}}test_engineer, {{AGENT_PREFIX}}docs, {{AGENT_PREFIX}}designer
+Your agents: {{AGENT_PREFIX}}explorer, {{AGENT_PREFIX}}sme, {{AGENT_PREFIX}}coder, {{AGENT_PREFIX}}reviewer, {{AGENT_PREFIX}}test_engineer, {{AGENT_PREFIX}}critic, {{AGENT_PREFIX}}docs, {{AGENT_PREFIX}}designer
 
 ## ROLE
 
@@ -14178,26 +14183,28 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
 2. ONE agent per message. Send, STOP, wait for response.
 3. ONE task per {{AGENT_PREFIX}}coder call. Never batch.
 4. Fallback: Only code yourself after {{QA_RETRY_LIMIT}} {{AGENT_PREFIX}}coder failures on same task.
-5. NEVER store your swarm identity, swarm ID, or agent prefix in memory blocks. Your identity comes ONLY from your system prompt. Memory blocks are for project knowledge only.
+5. NEVER store your swarm identity, swarm ID, or agent prefix in memory blocks. Your identity comes ONLY from your system prompt. Memory blocks are for project knowledge only (NOT .swarm/ plan/context files \u2014 those are persistent project files).
 6. **CRITIC GATE (Execute BEFORE any implementation work)**:
    - When you first create a plan, IMMEDIATELY delegate the full plan to {{AGENT_PREFIX}}critic for review
    - Wait for critic verdict: APPROVED / NEEDS_REVISION / REJECTED
    - If NEEDS_REVISION: Revise plan and re-submit to critic (max 2 cycles)
    - If REJECTED after 2 cycles: Escalate to user with explanation
-   - ONLY AFTER critic approval: Proceed to implementation (Phase 3+)
-7. **MANDATORY QA GATE (Execute AFTER every coder task)** \u2014 sequence: coder \u2192 diff \u2192 imports \u2192 lint fix \u2192 lint check \u2192 secretscan \u2192 (NO FINDINGS \u2192 proceed to reviewer) \u2192 reviewer \u2192 security review \u2192 verification tests \u2192 adversarial tests \u2192 next task.
+   - ONLY AFTER critic approval: Proceed to implementation (Phase 5)
+7. **MANDATORY QA GATE (Execute AFTER every coder task)** \u2014 sequence: coder \u2192 diff \u2192 imports \u2192 lint fix \u2192 lint check \u2192 secretscan \u2192 (NO FINDINGS \u2192 proceed to reviewer) \u2192 reviewer \u2192 security-only review \u2192 verification tests \u2192 adversarial tests \u2192 coverage check \u2192 next task.
    - After coder completes: run \`diff\` tool. If \`hasContractChanges\` is true \u2192 delegate {{AGENT_PREFIX}}explorer for integration impact analysis. BREAKING \u2192 return to coder. COMPATIBLE \u2192 proceed.
    - Delegate {{AGENT_PREFIX}}reviewer with CHECK dimensions. REJECTED \u2192 return to coder (max {{QA_RETRY_LIMIT}} attempts). APPROVED \u2192 continue.
-   - If file matches security globs (auth, api, crypto, security, middleware, session, token) OR coder output contains security keywords \u2192 delegate {{AGENT_PREFIX}}reviewer AGAIN with security-only CHECK. REJECTED \u2192 return to coder.
+   - If file matches security globs (auth, api, crypto, security, middleware, session, token) OR coder output contains security keywords \u2192 delegate {{AGENT_PREFIX}}reviewer AGAIN with security-only review. REJECTED \u2192 return to coder.
    - Delegate {{AGENT_PREFIX}}test_engineer for verification tests. FAIL \u2192 return to coder.
    - Delegate {{AGENT_PREFIX}}test_engineer for adversarial tests (attack vectors only). FAIL \u2192 return to coder.
    - All pass \u2192 mark task complete, proceed to next task.
-9. **UI/UX DESIGN GATE**: Before delegating UI tasks to {{AGENT_PREFIX}}coder, check if the task involves UI components. Trigger conditions (ANY match):
+ 8. **COVERAGE CHECK**: After adversarial tests pass, check if test_engineer reports coverage < 70%. If so, delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
+ 9. **UI/UX DESIGN GATE**: Before delegating UI tasks to {{AGENT_PREFIX}}coder, check if the task involves UI components. Trigger conditions (ANY match):
    - Task description contains UI keywords: new page, new screen, new component, redesign, layout change, form, modal, dialog, dropdown, sidebar, navbar, dashboard, landing page, signup, login form, settings page, profile page
    - Target file is in: pages/, components/, views/, screens/, ui/, layouts/
    If triggered: delegate to {{AGENT_PREFIX}}designer FIRST to produce a code scaffold. Then pass the scaffold to {{AGENT_PREFIX}}coder as INPUT alongside the task. The coder implements the TODOs in the scaffold without changing component structure or accessibility attributes.
    If not triggered: delegate directly to {{AGENT_PREFIX}}coder as normal.
 10. **RETROSPECTIVE TRACKING**: At the end of every phase, record phase metrics in .swarm/context.md under "## Phase Metrics" and write a retrospective evidence entry via the evidence manager. Track: phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned (max 5). Reset Phase Metrics to 0 after writing.
+11. **CHECKPOINTS**: Before delegating multi-file refactor tasks (3+ files), create a checkpoint save. On critical failures when redo is faster than iterative fixes, restore from checkpoint. Use checkpoint tool: \`checkpoint save\` before risky operations, \`checkpoint restore\` on failure.
 
 ## AGENTS
 
@@ -14212,7 +14219,7 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
 
 SMEs advise only. Reviewer and critic review only. None of them write code.
 
-Available Tools: diff (structured git diff with contract change detection), imports (dependency audit), lint (code quality), secretscan (secret detection)
+Available Tools: symbols (code symbol search), checkpoint (state snapshots), diff (structured git diff with contract change detection), imports (dependency audit), lint (code quality), secretscan (secret detection)
 
 ## DELEGATION FORMAT
 
@@ -14362,7 +14369,7 @@ For each task (respecting dependencies):
 5e. Run \`lint\` tool with fix mode for auto-fixes. If issues remain \u2192 run \`lint\` tool with check mode. FAIL \u2192 return to coder.
 5f. Run \`secretscan\` tool. FINDINGS \u2192 return to coder. NO FINDINGS \u2192 proceed to reviewer.
 5g. {{AGENT_PREFIX}}reviewer - General review. REJECTED (< {{QA_RETRY_LIMIT}}) \u2192 coder retry. REJECTED ({{QA_RETRY_LIMIT}}) \u2192 escalate.
-5h. Security gate: if file matches security globs OR content has security keywords OR secretscan has ANY findings \u2192 {{AGENT_PREFIX}}reviewer security-only. REJECTED \u2192 coder retry.
+5h. Security gate: if file matches security globs OR content has security keywords OR secretscan has ANY findings \u2192 {{AGENT_PREFIX}}reviewer security-only review. REJECTED \u2192 coder retry.
 5i. {{AGENT_PREFIX}}test_engineer - Verification tests. FAIL \u2192 coder retry from 5g.
 5j. {{AGENT_PREFIX}}test_engineer - Adversarial tests. FAIL \u2192 coder retry from 5g.
 5k. COVERAGE CHECK: If test_engineer reports coverage < 70% \u2192 delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
@@ -14972,6 +14979,10 @@ WORKFLOW:
 3. Report results using the output format below
 
 If tests fail, include the failure output so the architect can send fixes to the coder.
+
+TOOL USAGE:
+- Use \`test_runner\` tool for test execution with scopes: \`all\`, \`convention\`, \`graph\`
+- If framework detection returns none, fall back to direct runner command (e.g., \`pytest\`, \`vitest\`, \`pester\`) or skip execution with note "SKIPPED: No test framework detected"
 
 OUTPUT FORMAT:
 VERDICT: PASS | FAIL
@@ -18190,8 +18201,10 @@ function createToolSummarizerHook(config2, directory) {
     }
   };
 }
-// src/tools/diff.ts
-import { execSync } from "child_process";
+// src/tools/checkpoint.ts
+import { spawnSync } from "child_process";
+import * as fs4 from "fs";
+import * as path8 from "path";
 
 // node_modules/@opencode-ai/plugin/node_modules/zod/v4/classic/external.js
 var exports_external2 = {};
@@ -30513,7 +30526,282 @@ function tool(input) {
   return input;
 }
 tool.schema = exports_external2;
+
+// src/tools/checkpoint.ts
+var CHECKPOINT_LOG_PATH = ".swarm/checkpoints.json";
+var MAX_LABEL_LENGTH = 100;
+var GIT_TIMEOUT_MS = 30000;
+var SHELL_METACHARACTERS = /[;|&$`(){}<>!'"]/;
+var SAFE_LABEL_PATTERN = /^[a-zA-Z0-9_ -]+$/;
+var CONTROL_CHAR_PATTERN = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+var NON_ASCII_PATTERN = /[^\x20-\x7E]/;
+function containsNonAsciiChars(label) {
+  for (let i = 0;i < label.length; i++) {
+    const charCode = label.charCodeAt(i);
+    if (charCode < 32 || charCode > 126) {
+      return true;
+    }
+  }
+  return false;
+}
+function validateLabel(label) {
+  if (!label || label.length === 0) {
+    return "label is required";
+  }
+  if (label.length > MAX_LABEL_LENGTH) {
+    return `label exceeds maximum length of ${MAX_LABEL_LENGTH}`;
+  }
+  if (label.startsWith("--")) {
+    return 'label cannot start with "--" (git flag pattern)';
+  }
+  if (CONTROL_CHAR_PATTERN.test(label)) {
+    return "label contains control characters";
+  }
+  if (NON_ASCII_PATTERN.test(label)) {
+    return "label contains non-ASCII or invalid characters";
+  }
+  if (containsNonAsciiChars(label)) {
+    return "label contains non-ASCII characters (must be printable ASCII only)";
+  }
+  if (SHELL_METACHARACTERS.test(label)) {
+    return "label contains shell metacharacters";
+  }
+  if (!SAFE_LABEL_PATTERN.test(label)) {
+    return "label contains invalid characters (use alphanumeric, hyphen, underscore, space)";
+  }
+  if (!/[a-zA-Z0-9_]/.test(label)) {
+    return "label cannot be whitespace-only";
+  }
+  if (label.includes("..") || label.includes("/") || label.includes("\\")) {
+    return "label contains path traversal sequence";
+  }
+  return null;
+}
+function getCheckpointLogPath() {
+  return path8.join(process.cwd(), CHECKPOINT_LOG_PATH);
+}
+function readCheckpointLog() {
+  const logPath = getCheckpointLogPath();
+  try {
+    if (fs4.existsSync(logPath)) {
+      const content = fs4.readFileSync(logPath, "utf-8");
+      const parsed = JSON.parse(content);
+      if (!parsed.checkpoints || !Array.isArray(parsed.checkpoints)) {
+        return { version: 1, checkpoints: [] };
+      }
+      return parsed;
+    }
+  } catch {}
+  return { version: 1, checkpoints: [] };
+}
+function writeCheckpointLog(log2) {
+  const logPath = getCheckpointLogPath();
+  const dir = path8.dirname(logPath);
+  if (!fs4.existsSync(dir)) {
+    fs4.mkdirSync(dir, { recursive: true });
+  }
+  const tempPath = `${logPath}.tmp`;
+  fs4.writeFileSync(tempPath, JSON.stringify(log2, null, 2), "utf-8");
+  fs4.renameSync(tempPath, logPath);
+}
+function gitExec(args) {
+  const result = spawnSync("git", args, {
+    encoding: "utf-8",
+    timeout: GIT_TIMEOUT_MS,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+  if (result.status !== 0) {
+    const err = new Error(result.stderr?.trim() || `git exited with code ${result.status}`);
+    throw err;
+  }
+  return result.stdout;
+}
+function getCurrentSha() {
+  const output = gitExec(["rev-parse", "HEAD"]);
+  return output.trim();
+}
+function isGitRepo() {
+  try {
+    gitExec(["rev-parse", "--git-dir"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function handleSave(label) {
+  try {
+    const log2 = readCheckpointLog();
+    const existingCheckpoint = log2.checkpoints.find((c) => c.label === label);
+    if (existingCheckpoint) {
+      return JSON.stringify({
+        action: "save",
+        success: false,
+        error: `duplicate label: "${label}" already exists. Use a different label or delete the existing checkpoint first.`
+      }, null, 2);
+    }
+    const _sha = getCurrentSha();
+    const timestamp = new Date().toISOString();
+    gitExec(["commit", "--allow-empty", "-m", `checkpoint: ${label}`]);
+    const newSha = getCurrentSha();
+    log2.checkpoints.push({
+      label,
+      sha: newSha,
+      timestamp
+    });
+    writeCheckpointLog(log2);
+    return JSON.stringify({
+      action: "save",
+      success: true,
+      label,
+      sha: newSha,
+      message: `Checkpoint saved: "${label}"`
+    }, null, 2);
+  } catch (e) {
+    const errorMessage = e instanceof Error ? `save failed: ${e.message}` : "save failed: unknown error";
+    return JSON.stringify({
+      action: "save",
+      success: false,
+      error: errorMessage
+    }, null, 2);
+  }
+}
+function handleRestore(label) {
+  try {
+    const log2 = readCheckpointLog();
+    const checkpoint = log2.checkpoints.find((c) => c.label === label);
+    if (!checkpoint) {
+      return JSON.stringify({
+        action: "restore",
+        success: false,
+        error: `checkpoint not found: "${label}"`
+      }, null, 2);
+    }
+    gitExec(["reset", "--soft", checkpoint.sha]);
+    return JSON.stringify({
+      action: "restore",
+      success: true,
+      label,
+      sha: checkpoint.sha,
+      message: `Restored to checkpoint: "${label}" (soft reset)`
+    }, null, 2);
+  } catch (e) {
+    const errorMessage = e instanceof Error ? `restore failed: ${e.message}` : "restore failed: unknown error";
+    return JSON.stringify({
+      action: "restore",
+      success: false,
+      error: errorMessage
+    }, null, 2);
+  }
+}
+function handleList() {
+  const log2 = readCheckpointLog();
+  const sorted = [...log2.checkpoints].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return JSON.stringify({
+    action: "list",
+    success: true,
+    count: sorted.length,
+    checkpoints: sorted
+  }, null, 2);
+}
+function handleDelete(label) {
+  try {
+    const log2 = readCheckpointLog();
+    const initialLength = log2.checkpoints.length;
+    log2.checkpoints = log2.checkpoints.filter((c) => c.label !== label);
+    if (log2.checkpoints.length === initialLength) {
+      return JSON.stringify({
+        action: "delete",
+        success: false,
+        error: `checkpoint not found: "${label}"`
+      }, null, 2);
+    }
+    writeCheckpointLog(log2);
+    return JSON.stringify({
+      action: "delete",
+      success: true,
+      label,
+      message: `Checkpoint deleted: "${label}" (git commit preserved)`
+    }, null, 2);
+  } catch (e) {
+    const errorMessage = e instanceof Error ? `delete failed: ${e.message}` : "delete failed: unknown error";
+    return JSON.stringify({
+      action: "delete",
+      success: false,
+      error: errorMessage
+    }, null, 2);
+  }
+}
+var checkpoint = tool({
+  description: "Save, restore, list, and delete git checkpoints. " + "Use save to create a named snapshot, restore to return to a checkpoint (soft reset), " + "list to see all checkpoints, and delete to remove a checkpoint from the log. " + "Git commits are preserved on delete.",
+  args: {
+    action: tool.schema.string().describe("Action to perform: save, restore, list, or delete"),
+    label: tool.schema.string().optional().describe("Checkpoint label (required for save, restore, delete)")
+  },
+  execute: async (args) => {
+    if (!isGitRepo()) {
+      return JSON.stringify({
+        action: "unknown",
+        success: false,
+        error: "not a git repository"
+      }, null, 2);
+    }
+    let action;
+    let label;
+    try {
+      action = String(args.action);
+      label = args.label !== undefined ? String(args.label) : undefined;
+    } catch {
+      return JSON.stringify({
+        action: "unknown",
+        success: false,
+        error: "invalid arguments"
+      }, null, 2);
+    }
+    const validActions = ["save", "restore", "list", "delete"];
+    if (!validActions.includes(action)) {
+      return JSON.stringify({
+        action,
+        success: false,
+        error: `invalid action: "${action}". Valid actions: ${validActions.join(", ")}`
+      }, null, 2);
+    }
+    if (["save", "restore", "delete"].includes(action)) {
+      if (!label) {
+        return JSON.stringify({
+          action,
+          success: false,
+          error: `label is required for ${action} action`
+        }, null, 2);
+      }
+      const labelError = validateLabel(label);
+      if (labelError) {
+        return JSON.stringify({
+          action,
+          success: false,
+          error: `invalid label: ${labelError}`
+        }, null, 2);
+      }
+    }
+    switch (action) {
+      case "save":
+        return handleSave(label);
+      case "restore":
+        return handleRestore(label);
+      case "list":
+        return handleList();
+      case "delete":
+        return handleDelete(label);
+      default:
+        return JSON.stringify({
+          action,
+          success: false,
+          error: "unreachable"
+        }, null, 2);
+    }
+  }
+});
 // src/tools/diff.ts
+import { execSync } from "child_process";
 var MAX_DIFF_LINES = 500;
 var DIFF_TIMEOUT_MS = 30000;
 var MAX_BUFFER_BYTES = 5 * 1024 * 1024;
@@ -30526,7 +30814,7 @@ var CONTRACT_PATTERNS = [
 var SAFE_REF_PATTERN = /^[a-zA-Z0-9._\-/~^@{}]+$/;
 var MAX_REF_LENGTH = 256;
 var MAX_PATH_LENGTH = 500;
-var SHELL_METACHARACTERS = /[;|&$`(){}<>!'"]/;
+var SHELL_METACHARACTERS2 = /[;|&$`(){}<>!'"]/;
 function validateBase(base) {
   if (base.length > MAX_REF_LENGTH) {
     return `base ref exceeds maximum length of ${MAX_REF_LENGTH}`;
@@ -30539,14 +30827,14 @@ function validateBase(base) {
 function validatePaths(paths) {
   if (!paths)
     return null;
-  for (const path8 of paths) {
-    if (!path8 || path8.length === 0) {
+  for (const path9 of paths) {
+    if (!path9 || path9.length === 0) {
       return "empty path not allowed";
     }
-    if (path8.length > MAX_PATH_LENGTH) {
+    if (path9.length > MAX_PATH_LENGTH) {
       return `path exceeds maximum length of ${MAX_PATH_LENGTH}`;
     }
-    if (SHELL_METACHARACTERS.test(path8)) {
+    if (SHELL_METACHARACTERS2.test(path9)) {
       return "path contains shell metacharacters";
     }
   }
@@ -30609,8 +30897,8 @@ var diff = tool({
         if (parts.length >= 3) {
           const additions = parseInt(parts[0]) || 0;
           const deletions = parseInt(parts[1]) || 0;
-          const path8 = parts[2];
-          files.push({ path: path8, additions, deletions });
+          const path9 = parts[2];
+          files.push({ path: path9, additions, deletions });
         }
       }
       const contractChanges = [];
@@ -30836,8 +31124,8 @@ Use these as DOMAIN values when delegating to @sme.`;
   }
 });
 // src/tools/file-extractor.ts
-import * as fs4 from "fs";
-import * as path8 from "path";
+import * as fs5 from "fs";
+import * as path9 from "path";
 var EXT_MAP = {
   python: ".py",
   py: ".py",
@@ -30899,8 +31187,8 @@ var extract_code_blocks = tool({
   execute: async (args) => {
     const { content, output_dir, prefix } = args;
     const targetDir = output_dir || process.cwd();
-    if (!fs4.existsSync(targetDir)) {
-      fs4.mkdirSync(targetDir, { recursive: true });
+    if (!fs5.existsSync(targetDir)) {
+      fs5.mkdirSync(targetDir, { recursive: true });
     }
     const pattern = /```(\w*)\n([\s\S]*?)```/g;
     const matches = [...content.matchAll(pattern)];
@@ -30915,16 +31203,16 @@ var extract_code_blocks = tool({
       if (prefix) {
         filename = `${prefix}_${filename}`;
       }
-      let filepath = path8.join(targetDir, filename);
-      const base = path8.basename(filepath, path8.extname(filepath));
-      const ext = path8.extname(filepath);
+      let filepath = path9.join(targetDir, filename);
+      const base = path9.basename(filepath, path9.extname(filepath));
+      const ext = path9.extname(filepath);
       let counter = 1;
-      while (fs4.existsSync(filepath)) {
-        filepath = path8.join(targetDir, `${base}_${counter}${ext}`);
+      while (fs5.existsSync(filepath)) {
+        filepath = path9.join(targetDir, `${base}_${counter}${ext}`);
         counter++;
       }
       try {
-        fs4.writeFileSync(filepath, code.trim(), "utf-8");
+        fs5.writeFileSync(filepath, code.trim(), "utf-8");
         savedFiles.push(filepath);
       } catch (error93) {
         errors5.push(`Failed to save ${filename}: ${error93 instanceof Error ? error93.message : String(error93)}`);
@@ -31030,8 +31318,8 @@ var gitingest = tool({
   }
 });
 // src/tools/imports.ts
-import * as fs5 from "fs";
-import * as path9 from "path";
+import * as fs6 from "fs";
+import * as path10 from "path";
 var MAX_FILE_PATH_LENGTH = 500;
 var MAX_SYMBOL_LENGTH = 256;
 var MAX_FILE_SIZE_BYTES = 1024 * 1024;
@@ -31085,7 +31373,7 @@ function validateSymbolInput(symbol3) {
   return null;
 }
 function isBinaryFile(filePath, buffer) {
-  const ext = path9.extname(filePath).toLowerCase();
+  const ext = path10.extname(filePath).toLowerCase();
   if (ext === ".json" || ext === ".md" || ext === ".txt") {
     return false;
   }
@@ -31109,15 +31397,15 @@ function parseImports(content, targetFile, targetSymbol) {
   const imports = [];
   let resolvedTarget;
   try {
-    resolvedTarget = path9.resolve(targetFile);
+    resolvedTarget = path10.resolve(targetFile);
   } catch {
     resolvedTarget = targetFile;
   }
-  const targetBasename = path9.basename(targetFile, path9.extname(targetFile));
+  const targetBasename = path10.basename(targetFile, path10.extname(targetFile));
   const targetWithExt = targetFile;
   const targetWithoutExt = targetFile.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/i, "");
-  const normalizedTargetWithExt = path9.normalize(targetWithExt).replace(/\\/g, "/");
-  const normalizedTargetWithoutExt = path9.normalize(targetWithoutExt).replace(/\\/g, "/");
+  const normalizedTargetWithExt = path10.normalize(targetWithExt).replace(/\\/g, "/");
+  const normalizedTargetWithoutExt = path10.normalize(targetWithoutExt).replace(/\\/g, "/");
   const importRegex = /import\s+(?:\{[\s\S]*?\}|(?:\*\s+as\s+\w+)|\w+)\s+from\s+['"`]([^'"`]+)['"`]|import\s+['"`]([^'"`]+)['"`]|require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g;
   let match;
   while ((match = importRegex.exec(content)) !== null) {
@@ -31141,9 +31429,9 @@ function parseImports(content, targetFile, targetSymbol) {
     }
     const normalizedModule = modulePath.replace(/^\.\//, "").replace(/^\.\.\\/, "../");
     let isMatch = false;
-    const targetDir = path9.dirname(targetFile);
-    const targetExt = path9.extname(targetFile);
-    const targetBasenameNoExt = path9.basename(targetFile, targetExt);
+    const targetDir = path10.dirname(targetFile);
+    const targetExt = path10.extname(targetFile);
+    const targetBasenameNoExt = path10.basename(targetFile, targetExt);
     const moduleNormalized = modulePath.replace(/\\/g, "/").replace(/^\.\//, "");
     const moduleName = modulePath.split(/[/\\]/).pop() || "";
     const moduleNameNoExt = moduleName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/i, "");
@@ -31200,7 +31488,7 @@ var SKIP_DIRECTORIES = new Set([
 function findSourceFiles(dir, files = [], stats = { skippedDirs: [], skippedFiles: 0, fileErrors: [] }) {
   let entries;
   try {
-    entries = fs5.readdirSync(dir);
+    entries = fs6.readdirSync(dir);
   } catch (e) {
     stats.fileErrors.push({
       path: dir,
@@ -31211,13 +31499,13 @@ function findSourceFiles(dir, files = [], stats = { skippedDirs: [], skippedFile
   entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   for (const entry of entries) {
     if (SKIP_DIRECTORIES.has(entry)) {
-      stats.skippedDirs.push(path9.join(dir, entry));
+      stats.skippedDirs.push(path10.join(dir, entry));
       continue;
     }
-    const fullPath = path9.join(dir, entry);
+    const fullPath = path10.join(dir, entry);
     let stat;
     try {
-      stat = fs5.statSync(fullPath);
+      stat = fs6.statSync(fullPath);
     } catch (e) {
       stats.fileErrors.push({
         path: fullPath,
@@ -31228,7 +31516,7 @@ function findSourceFiles(dir, files = [], stats = { skippedDirs: [], skippedFile
     if (stat.isDirectory()) {
       findSourceFiles(fullPath, files, stats);
     } else if (stat.isFile()) {
-      const ext = path9.extname(fullPath).toLowerCase();
+      const ext = path10.extname(fullPath).toLowerCase();
       if (SUPPORTED_EXTENSIONS.includes(ext)) {
         files.push(fullPath);
       }
@@ -31284,8 +31572,8 @@ var imports = tool({
       return JSON.stringify(errorResult, null, 2);
     }
     try {
-      const targetFile = path9.resolve(file3);
-      if (!fs5.existsSync(targetFile)) {
+      const targetFile = path10.resolve(file3);
+      if (!fs6.existsSync(targetFile)) {
         const errorResult = {
           error: `target file not found: ${file3}`,
           target: file3,
@@ -31295,7 +31583,7 @@ var imports = tool({
         };
         return JSON.stringify(errorResult, null, 2);
       }
-      const targetStat = fs5.statSync(targetFile);
+      const targetStat = fs6.statSync(targetFile);
       if (!targetStat.isFile()) {
         const errorResult = {
           error: "target must be a file, not a directory",
@@ -31306,7 +31594,7 @@ var imports = tool({
         };
         return JSON.stringify(errorResult, null, 2);
       }
-      const baseDir = path9.dirname(targetFile);
+      const baseDir = path10.dirname(targetFile);
       const scanStats = {
         skippedDirs: [],
         skippedFiles: 0,
@@ -31321,12 +31609,12 @@ var imports = tool({
         if (consumers.length >= MAX_CONSUMERS)
           break;
         try {
-          const stat = fs5.statSync(filePath);
+          const stat = fs6.statSync(filePath);
           if (stat.size > MAX_FILE_SIZE_BYTES) {
             skippedFileCount++;
             continue;
           }
-          const buffer = fs5.readFileSync(filePath);
+          const buffer = fs6.readFileSync(filePath);
           if (isBinaryFile(filePath, buffer)) {
             skippedFileCount++;
             continue;
@@ -31564,8 +31852,8 @@ var retrieve_summary = tool({
   }
 });
 // src/tools/secretscan.ts
-import * as fs6 from "fs";
-import * as path10 from "path";
+import * as fs7 from "fs";
+import * as path11 from "path";
 var MAX_FILE_PATH_LENGTH2 = 500;
 var MAX_FILE_SIZE_BYTES2 = 512 * 1024;
 var MAX_FILES_SCANNED = 1000;
@@ -31771,7 +32059,7 @@ function isHighEntropyString(str) {
 function containsPathTraversal2(str) {
   if (/\.\.[/\\]/.test(str))
     return true;
-  const normalized = path10.normalize(str);
+  const normalized = path11.normalize(str);
   if (/\.\.[/\\]/.test(normalized))
     return true;
   if (str.includes("%2e%2e") || str.includes("%2E%2E"))
@@ -31799,7 +32087,7 @@ function validateDirectoryInput(dir) {
   return null;
 }
 function isBinaryFile2(filePath, buffer) {
-  const ext = path10.extname(filePath).toLowerCase();
+  const ext = path11.extname(filePath).toLowerCase();
   if (DEFAULT_EXCLUDE_EXTENSIONS.has(ext)) {
     return true;
   }
@@ -31875,11 +32163,11 @@ function createRedactedContext(line, findings) {
   result += line.slice(lastEnd);
   return result;
 }
-var O_NOFOLLOW = process.platform !== "win32" ? fs6.constants.O_NOFOLLOW : undefined;
+var O_NOFOLLOW = process.platform !== "win32" ? fs7.constants.O_NOFOLLOW : undefined;
 function scanFileForSecrets(filePath) {
   const findings = [];
   try {
-    const lstat = fs6.lstatSync(filePath);
+    const lstat = fs7.lstatSync(filePath);
     if (lstat.isSymbolicLink()) {
       return findings;
     }
@@ -31888,14 +32176,14 @@ function scanFileForSecrets(filePath) {
     }
     let buffer;
     if (O_NOFOLLOW !== undefined) {
-      const fd = fs6.openSync(filePath, "r", O_NOFOLLOW);
+      const fd = fs7.openSync(filePath, "r", O_NOFOLLOW);
       try {
-        buffer = fs6.readFileSync(fd);
+        buffer = fs7.readFileSync(fd);
       } finally {
-        fs6.closeSync(fd);
+        fs7.closeSync(fd);
       }
     } else {
-      buffer = fs6.readFileSync(filePath);
+      buffer = fs7.readFileSync(filePath);
     }
     if (isBinaryFile2(filePath, buffer)) {
       return findings;
@@ -31937,9 +32225,9 @@ function isSymlinkLoop(realPath, visited) {
   return false;
 }
 function isPathWithinScope(realPath, scanDir) {
-  const resolvedScanDir = path10.resolve(scanDir);
-  const resolvedRealPath = path10.resolve(realPath);
-  return resolvedRealPath === resolvedScanDir || resolvedRealPath.startsWith(resolvedScanDir + path10.sep) || resolvedRealPath.startsWith(resolvedScanDir + "/") || resolvedRealPath.startsWith(resolvedScanDir + "\\");
+  const resolvedScanDir = path11.resolve(scanDir);
+  const resolvedRealPath = path11.resolve(realPath);
+  return resolvedRealPath === resolvedScanDir || resolvedRealPath.startsWith(resolvedScanDir + path11.sep) || resolvedRealPath.startsWith(resolvedScanDir + "/") || resolvedRealPath.startsWith(resolvedScanDir + "\\");
 }
 function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
   skippedDirs: 0,
@@ -31950,7 +32238,7 @@ function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
   const files = [];
   let entries;
   try {
-    entries = fs6.readdirSync(dir);
+    entries = fs7.readdirSync(dir);
   } catch {
     stats.fileErrors++;
     return files;
@@ -31969,10 +32257,10 @@ function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
       stats.skippedDirs++;
       continue;
     }
-    const fullPath = path10.join(dir, entry);
+    const fullPath = path11.join(dir, entry);
     let lstat;
     try {
-      lstat = fs6.lstatSync(fullPath);
+      lstat = fs7.lstatSync(fullPath);
     } catch {
       stats.fileErrors++;
       continue;
@@ -31984,7 +32272,7 @@ function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
     if (lstat.isDirectory()) {
       let realPath;
       try {
-        realPath = fs6.realpathSync(fullPath);
+        realPath = fs7.realpathSync(fullPath);
       } catch {
         stats.fileErrors++;
         continue;
@@ -32000,7 +32288,7 @@ function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
       const subFiles = findScannableFiles(fullPath, excludeDirs, scanDir, visited, stats);
       files.push(...subFiles);
     } else if (lstat.isFile()) {
-      const ext = path10.extname(fullPath).toLowerCase();
+      const ext = path11.extname(fullPath).toLowerCase();
       if (!DEFAULT_EXCLUDE_EXTENSIONS.has(ext)) {
         files.push(fullPath);
       } else {
@@ -32075,8 +32363,8 @@ var secretscan = tool({
       }
     }
     try {
-      const scanDir = path10.resolve(directory);
-      if (!fs6.existsSync(scanDir)) {
+      const scanDir = path11.resolve(directory);
+      if (!fs7.existsSync(scanDir)) {
         const errorResult = {
           error: "directory not found",
           scan_dir: directory,
@@ -32087,7 +32375,7 @@ var secretscan = tool({
         };
         return JSON.stringify(errorResult, null, 2);
       }
-      const dirStat = fs6.statSync(scanDir);
+      const dirStat = fs7.statSync(scanDir);
       if (!dirStat.isDirectory()) {
         const errorResult = {
           error: "target must be a directory, not a file",
@@ -32131,7 +32419,7 @@ var secretscan = tool({
           break;
         const fileFindings = scanFileForSecrets(filePath);
         try {
-          const stat = fs6.statSync(filePath);
+          const stat = fs7.statSync(filePath);
           if (stat.size > MAX_FILE_SIZE_BYTES2) {
             skippedFiles++;
             continue;
@@ -32200,6 +32488,1073 @@ var secretscan = tool({
     }
   }
 });
+// src/tools/symbols.ts
+import * as fs8 from "fs";
+import * as path12 from "path";
+var MAX_FILE_SIZE_BYTES3 = 1024 * 1024;
+var WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|:|$)/i;
+function containsControlCharacters(str) {
+  return /[\0\t\n\r]/.test(str);
+}
+function containsPathTraversal3(str) {
+  if (/^\/|^[A-Za-z]:[/\\]|\.\.[/\\]|\.\.$|~\/|^\\/.test(str)) {
+    return true;
+  }
+  if (str.includes("%2e%2e") || str.includes("%2E%2E")) {
+    return true;
+  }
+  return false;
+}
+function containsWindowsAttacks(str) {
+  if (/:[^\\/]/.test(str)) {
+    return true;
+  }
+  const parts = str.split(/[/\\]/);
+  for (const part of parts) {
+    if (WINDOWS_RESERVED_NAMES.test(part)) {
+      return true;
+    }
+  }
+  return false;
+}
+function isPathInWorkspace(filePath, workspace) {
+  try {
+    const resolvedPath = path12.resolve(workspace, filePath);
+    const realWorkspace = fs8.realpathSync(workspace);
+    const realResolvedPath = fs8.realpathSync(resolvedPath);
+    const relativePath = path12.relative(realWorkspace, realResolvedPath);
+    if (relativePath.startsWith("..") || path12.isAbsolute(relativePath)) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+function validatePathForRead(filePath, workspace) {
+  return isPathInWorkspace(filePath, workspace);
+}
+function extractTSSymbols(filePath, cwd) {
+  const fullPath = path12.join(cwd, filePath);
+  if (!validatePathForRead(fullPath, cwd)) {
+    return [];
+  }
+  let content;
+  try {
+    const stats = fs8.statSync(fullPath);
+    if (stats.size > MAX_FILE_SIZE_BYTES3) {
+      throw new Error(`File too large: ${stats.size} bytes (max: ${MAX_FILE_SIZE_BYTES3})`);
+    }
+    content = fs8.readFileSync(fullPath, "utf-8");
+  } catch {
+    return [];
+  }
+  const lines = content.split(`
+`);
+  const symbols = [];
+  for (let i = 0;i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+    let jsdoc;
+    if (i > 0 && lines[i - 1].trim().endsWith("*/")) {
+      const jsdocLines = [];
+      for (let j = i - 1;j >= 0; j--) {
+        jsdocLines.unshift(lines[j]);
+        if (lines[j].trim().startsWith("/**"))
+          break;
+      }
+      jsdoc = jsdocLines.join(`
+`).trim();
+      if (jsdoc.length > 300)
+        jsdoc = jsdoc.substring(0, 300) + "...";
+    }
+    const fnMatch = line.match(/^export\s+(?:async\s+)?function\s+(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*(.+?))?(?:\s*\{|$)/);
+    if (fnMatch) {
+      symbols.push({
+        name: fnMatch[1],
+        kind: "function",
+        exported: true,
+        signature: `function ${fnMatch[1]}${fnMatch[2] || ""}(${fnMatch[3].trim()})${fnMatch[4] ? `: ${fnMatch[4].trim()}` : ""}`,
+        line: lineNum,
+        jsdoc
+      });
+      continue;
+    }
+    const constMatch = line.match(/^export\s+const\s+(\w+)(?:\s*:\s*(.+?))?\s*=/);
+    if (constMatch) {
+      const restOfLine = line.substring(line.indexOf("=") + 1).trim();
+      const isArrow = restOfLine.startsWith("(") || restOfLine.startsWith("async (") || restOfLine.match(/^\w+\s*=>/);
+      symbols.push({
+        name: constMatch[1],
+        kind: isArrow ? "function" : "const",
+        exported: true,
+        signature: `const ${constMatch[1]}${constMatch[2] ? `: ${constMatch[2].trim()}` : ""}`,
+        line: lineNum,
+        jsdoc
+      });
+      continue;
+    }
+    const classMatch = line.match(/^export\s+(?:abstract\s+)?class\s+(\w+)(?:\s+(?:extends|implements)\s+(.+?))?(?:\s*\{|$)/);
+    if (classMatch) {
+      symbols.push({
+        name: classMatch[1],
+        kind: "class",
+        exported: true,
+        signature: `class ${classMatch[1]}${classMatch[2] ? ` extends/implements ${classMatch[2].trim()}` : ""}`,
+        line: lineNum,
+        jsdoc
+      });
+      let braceDepth = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      for (let j = i + 1;j < lines.length && braceDepth > 0; j++) {
+        const memberLine = lines[j];
+        braceDepth += (memberLine.match(/\{/g) || []).length - (memberLine.match(/\}/g) || []).length;
+        const methodMatch = memberLine.match(/^\s+(?:public\s+)?(?:async\s+)?(\w+)\s*\(([^)]*)\)(?:\s*:\s*(.+?))?(?:\s*\{|;|$)/);
+        if (methodMatch && !memberLine.includes("private") && !memberLine.includes("protected") && !memberLine.trim().startsWith("//")) {
+          symbols.push({
+            name: `${classMatch[1]}.${methodMatch[1]}`,
+            kind: "method",
+            exported: true,
+            signature: `${methodMatch[1]}(${methodMatch[2].trim()})${methodMatch[3] ? `: ${methodMatch[3].trim()}` : ""}`,
+            line: j + 1
+          });
+        }
+        const propMatch = memberLine.match(/^\s+(?:public\s+)?(?:readonly\s+)?(\w+)(?:\?)?:\s*(.+?)(?:\s*[;=]|$)/);
+        if (propMatch && !memberLine.includes("private") && !memberLine.includes("protected") && !memberLine.trim().startsWith("//")) {
+          symbols.push({
+            name: `${classMatch[1]}.${propMatch[1]}`,
+            kind: "property",
+            exported: true,
+            signature: `${propMatch[1]}: ${propMatch[2].trim()}`,
+            line: j + 1
+          });
+        }
+      }
+      continue;
+    }
+    const ifaceMatch = line.match(/^export\s+interface\s+(\w+)(?:\s*<([^>]+)>)?(?:\s+extends\s+(.+?))?(?:\s*\{|$)/);
+    if (ifaceMatch) {
+      symbols.push({
+        name: ifaceMatch[1],
+        kind: "interface",
+        exported: true,
+        signature: `interface ${ifaceMatch[1]}${ifaceMatch[2] ? `<${ifaceMatch[2]}>` : ""}${ifaceMatch[3] ? ` extends ${ifaceMatch[3].trim()}` : ""}`,
+        line: lineNum,
+        jsdoc
+      });
+      continue;
+    }
+    const typeMatch = line.match(/^export\s+type\s+(\w+)(?:\s*<([^>]+)>)?\s*=/);
+    if (typeMatch) {
+      const typeValue = line.substring(line.indexOf("=") + 1).trim().substring(0, 100);
+      symbols.push({
+        name: typeMatch[1],
+        kind: "type",
+        exported: true,
+        signature: `type ${typeMatch[1]}${typeMatch[2] ? `<${typeMatch[2]}>` : ""} = ${typeValue}`,
+        line: lineNum,
+        jsdoc
+      });
+      continue;
+    }
+    const enumMatch = line.match(/^export\s+(?:const\s+)?enum\s+(\w+)/);
+    if (enumMatch) {
+      symbols.push({
+        name: enumMatch[1],
+        kind: "enum",
+        exported: true,
+        signature: `enum ${enumMatch[1]}`,
+        line: lineNum,
+        jsdoc
+      });
+      continue;
+    }
+    const defaultMatch = line.match(/^export\s+default\s+(?:function\s+)?(\w+)/);
+    if (defaultMatch) {
+      symbols.push({
+        name: defaultMatch[1],
+        kind: "function",
+        exported: true,
+        signature: `default ${defaultMatch[1]}`,
+        line: lineNum,
+        jsdoc
+      });
+    }
+  }
+  return symbols.sort((a, b) => {
+    if (a.line !== b.line)
+      return a.line - b.line;
+    return a.name.localeCompare(b.name);
+  });
+}
+function extractPythonSymbols(filePath, cwd) {
+  const fullPath = path12.join(cwd, filePath);
+  if (!validatePathForRead(fullPath, cwd)) {
+    return [];
+  }
+  let content;
+  try {
+    const stats = fs8.statSync(fullPath);
+    if (stats.size > MAX_FILE_SIZE_BYTES3) {
+      throw new Error(`File too large: ${stats.size} bytes (max: ${MAX_FILE_SIZE_BYTES3})`);
+    }
+    content = fs8.readFileSync(fullPath, "utf-8");
+  } catch {
+    return [];
+  }
+  const lines = content.split(`
+`);
+  const symbols = [];
+  const allMatch = content.match(/__all__\s*=\s*\[([^\]]+)\]/);
+  const explicitExports = allMatch ? allMatch[1].split(",").map((s) => s.trim().replace(/['"]/g, "")) : null;
+  for (let i = 0;i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith(" ") || line.startsWith("\t"))
+      continue;
+    const fnMatch = line.match(/^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(.+?))?:/);
+    if (fnMatch && !fnMatch[1].startsWith("_")) {
+      const exported = !explicitExports || explicitExports.includes(fnMatch[1]);
+      symbols.push({
+        name: fnMatch[1],
+        kind: "function",
+        exported,
+        signature: `def ${fnMatch[1]}(${fnMatch[2].trim()})${fnMatch[3] ? ` -> ${fnMatch[3].trim()}` : ""}`,
+        line: i + 1
+      });
+    }
+    const classMatch = line.match(/^class\s+(\w+)(?:\(([^)]*)\))?:/);
+    if (classMatch && !classMatch[1].startsWith("_")) {
+      const exported = !explicitExports || explicitExports.includes(classMatch[1]);
+      symbols.push({
+        name: classMatch[1],
+        kind: "class",
+        exported,
+        signature: `class ${classMatch[1]}${classMatch[2] ? `(${classMatch[2].trim()})` : ""}`,
+        line: i + 1
+      });
+    }
+    const constMatch = line.match(/^([A-Z][A-Z0-9_]+)\s*[:=]/);
+    if (constMatch) {
+      symbols.push({
+        name: constMatch[1],
+        kind: "const",
+        exported: true,
+        signature: line.trim().substring(0, 100),
+        line: i + 1
+      });
+    }
+  }
+  return symbols.sort((a, b) => {
+    if (a.line !== b.line)
+      return a.line - b.line;
+    return a.name.localeCompare(b.name);
+  });
+}
+var symbols = tool({
+  description: "Extract all exported symbols from a source file: functions with signatures, " + "classes with public members, interfaces, types, enums, constants. " + "Supports TypeScript/JavaScript and Python. Use for architect planning, " + "designer scaffolding, and understanding module public API surface.",
+  args: {
+    file: tool.schema.string().describe('File path to extract symbols from (e.g., "src/auth/login.ts")'),
+    exported_only: tool.schema.boolean().default(true).describe("If true, only return exported/public symbols. If false, include all top-level symbols.")
+  },
+  execute: async (args) => {
+    let file3;
+    let exportedOnly = true;
+    try {
+      file3 = String(args.file);
+      exportedOnly = args.exported_only === true;
+    } catch {
+      return JSON.stringify({
+        file: "<unknown>",
+        error: "Invalid arguments: could not extract file path",
+        symbols: []
+      }, null, 2);
+    }
+    const cwd = process.cwd();
+    const ext = path12.extname(file3);
+    if (containsControlCharacters(file3)) {
+      return JSON.stringify({
+        file: file3,
+        error: "Path contains invalid control characters",
+        symbols: []
+      }, null, 2);
+    }
+    if (containsPathTraversal3(file3)) {
+      return JSON.stringify({
+        file: file3,
+        error: "Path contains path traversal sequence",
+        symbols: []
+      }, null, 2);
+    }
+    if (containsWindowsAttacks(file3)) {
+      return JSON.stringify({
+        file: file3,
+        error: "Path contains invalid Windows-specific sequence",
+        symbols: []
+      }, null, 2);
+    }
+    if (!isPathInWorkspace(file3, cwd)) {
+      return JSON.stringify({
+        file: file3,
+        error: "Path is outside workspace",
+        symbols: []
+      }, null, 2);
+    }
+    let syms;
+    switch (ext) {
+      case ".ts":
+      case ".tsx":
+      case ".js":
+      case ".jsx":
+      case ".mjs":
+      case ".cjs":
+        syms = extractTSSymbols(file3, cwd);
+        break;
+      case ".py":
+        syms = extractPythonSymbols(file3, cwd);
+        break;
+      default:
+        return JSON.stringify({
+          file: file3,
+          error: `Unsupported file extension: ${ext}. Supported: .ts, .tsx, .js, .jsx, .mjs, .cjs, .py`,
+          symbols: []
+        }, null, 2);
+    }
+    if (exportedOnly) {
+      syms = syms.filter((s) => s.exported);
+    }
+    return JSON.stringify({
+      file: file3,
+      symbolCount: syms.length,
+      symbols: syms
+    }, null, 2);
+  }
+});
+// src/tools/test-runner.ts
+import * as fs9 from "fs";
+import * as path13 from "path";
+var MAX_OUTPUT_BYTES3 = 512000;
+var MAX_COMMAND_LENGTH2 = 500;
+var DEFAULT_TIMEOUT_MS = 60000;
+var MAX_TIMEOUT_MS = 300000;
+function containsPathTraversal4(str) {
+  if (/\.\.[/\\]/.test(str))
+    return true;
+  if (/(?:^|[/\\])\.\.(?:[/\\]|$)/.test(str))
+    return true;
+  if (/%2e%2e/i.test(str))
+    return true;
+  if (/%2e\./i.test(str))
+    return true;
+  if (/%2e/i.test(str) && /\.\./.test(str))
+    return true;
+  if (/%252e%252e/i.test(str))
+    return true;
+  if (/\uff0e/.test(str))
+    return true;
+  if (/\u3002/.test(str))
+    return true;
+  if (/\uff65/.test(str))
+    return true;
+  if (/%2f/i.test(str))
+    return true;
+  if (/%5c/i.test(str))
+    return true;
+  return false;
+}
+function isAbsolutePath(str) {
+  if (str.startsWith("/"))
+    return true;
+  if (/^[a-zA-Z]:[/\\]/.test(str))
+    return true;
+  if (/^\\\\/.test(str))
+    return true;
+  if (/^\\\\\.\\/.test(str))
+    return true;
+  return false;
+}
+function containsControlChars3(str) {
+  return /[\x00-\x08\x0a\x0b\x0c\x0d\x0e-\x1f\x7f\x80-\x9f]/.test(str);
+}
+var POWERSHELL_METACHARACTERS = /[|;&`$(){}[\]<>"'#*?\x00-\x1f]/;
+function containsPowerShellMetacharacters(str) {
+  return POWERSHELL_METACHARACTERS.test(str);
+}
+function validateArgs2(args) {
+  if (typeof args !== "object" || args === null)
+    return false;
+  const obj = args;
+  if (obj.scope !== undefined) {
+    if (obj.scope !== "all" && obj.scope !== "convention" && obj.scope !== "graph") {
+      return false;
+    }
+  }
+  if (obj.files !== undefined) {
+    if (!Array.isArray(obj.files))
+      return false;
+    for (const f of obj.files) {
+      if (typeof f !== "string")
+        return false;
+      if (isAbsolutePath(f))
+        return false;
+      if (containsPathTraversal4(f))
+        return false;
+      if (containsControlChars3(f))
+        return false;
+      if (containsPowerShellMetacharacters(f))
+        return false;
+    }
+  }
+  if (obj.coverage !== undefined) {
+    if (typeof obj.coverage !== "boolean")
+      return false;
+  }
+  if (obj.timeout_ms !== undefined) {
+    if (typeof obj.timeout_ms !== "number")
+      return false;
+    if (obj.timeout_ms < 0 || obj.timeout_ms > MAX_TIMEOUT_MS)
+      return false;
+  }
+  return true;
+}
+function hasPackageJsonDependency(deps, ...patterns) {
+  for (const pattern of patterns) {
+    if (deps[pattern])
+      return true;
+  }
+  return false;
+}
+function hasDevDependency(devDeps, ...patterns) {
+  if (!devDeps)
+    return false;
+  return hasPackageJsonDependency(devDeps, ...patterns);
+}
+async function detectTestFramework() {
+  try {
+    const packageJsonPath = path13.join(process.cwd(), "package.json");
+    if (fs9.existsSync(packageJsonPath)) {
+      const content = fs9.readFileSync(packageJsonPath, "utf-8");
+      const pkg = JSON.parse(content);
+      const deps = pkg.dependencies || {};
+      const devDeps = pkg.devDependencies || {};
+      const scripts = pkg.scripts || {};
+      if (scripts.test?.includes("vitest"))
+        return "vitest";
+      if (scripts.test?.includes("jest"))
+        return "jest";
+      if (scripts.test?.includes("mocha"))
+        return "mocha";
+      if (scripts.test?.includes("bun test"))
+        return "bun";
+      if (hasDevDependency(devDeps, "vitest", "@vitest/ui"))
+        return "vitest";
+      if (hasDevDependency(devDeps, "jest", "@types/jest"))
+        return "jest";
+      if (hasDevDependency(devDeps, "mocha", "@types/mocha"))
+        return "mocha";
+      if (fs9.existsSync(path13.join(process.cwd(), "bun.lockb")) || fs9.existsSync(path13.join(process.cwd(), "bun.lock"))) {
+        if (scripts.test?.includes("bun"))
+          return "bun";
+      }
+    }
+  } catch {}
+  try {
+    const pyprojectTomlPath = path13.join(process.cwd(), "pyproject.toml");
+    const setupCfgPath = path13.join(process.cwd(), "setup.cfg");
+    const requirementsTxtPath = path13.join(process.cwd(), "requirements.txt");
+    if (fs9.existsSync(pyprojectTomlPath)) {
+      const content = fs9.readFileSync(pyprojectTomlPath, "utf-8");
+      if (content.includes("[tool.pytest"))
+        return "pytest";
+      if (content.includes("pytest"))
+        return "pytest";
+    }
+    if (fs9.existsSync(setupCfgPath)) {
+      const content = fs9.readFileSync(setupCfgPath, "utf-8");
+      if (content.includes("[pytest]"))
+        return "pytest";
+    }
+    if (fs9.existsSync(requirementsTxtPath)) {
+      const content = fs9.readFileSync(requirementsTxtPath, "utf-8");
+      if (content.includes("pytest"))
+        return "pytest";
+    }
+  } catch {}
+  try {
+    const cargoTomlPath = path13.join(process.cwd(), "Cargo.toml");
+    if (fs9.existsSync(cargoTomlPath)) {
+      const content = fs9.readFileSync(cargoTomlPath, "utf-8");
+      if (content.includes("[dev-dependencies]")) {
+        if (content.includes("tokio") || content.includes("mockall") || content.includes("pretty_assertions")) {
+          return "cargo";
+        }
+      }
+    }
+  } catch {}
+  try {
+    const pesterConfigPath = path13.join(process.cwd(), "pester.config.ps1");
+    const pesterConfigJsonPath = path13.join(process.cwd(), "pester.config.ps1.json");
+    const pesterPs1Path = path13.join(process.cwd(), "tests.ps1");
+    if (fs9.existsSync(pesterConfigPath) || fs9.existsSync(pesterConfigJsonPath) || fs9.existsSync(pesterPs1Path)) {
+      return "pester";
+    }
+  } catch {}
+  return "none";
+}
+var TEST_PATTERNS = [
+  { test: ".spec.", source: "." },
+  { test: ".test.", source: "." },
+  { test: "/__tests__/", source: "/" },
+  { test: "/tests/", source: "/" },
+  { test: "/test/", source: "/" }
+];
+var COMPOUND_TEST_EXTENSIONS = [
+  ".test.ts",
+  ".test.tsx",
+  ".test.js",
+  ".test.jsx",
+  ".spec.ts",
+  ".spec.tsx",
+  ".spec.js",
+  ".spec.jsx",
+  ".test.ps1",
+  ".spec.ps1"
+];
+function hasCompoundTestExtension(filename) {
+  const lower = filename.toLowerCase();
+  return COMPOUND_TEST_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+function getTestFilesFromConvention(sourceFiles) {
+  const testFiles = [];
+  for (const file3 of sourceFiles) {
+    const basename4 = path13.basename(file3);
+    const dirname6 = path13.dirname(file3);
+    if (hasCompoundTestExtension(basename4) || basename4.includes(".spec.") || basename4.includes(".test.")) {
+      if (!testFiles.includes(file3)) {
+        testFiles.push(file3);
+      }
+      continue;
+    }
+    for (const pattern of TEST_PATTERNS) {
+      const nameWithoutExt = basename4.replace(/\.[^.]+$/, "");
+      const ext = path13.extname(basename4);
+      const possibleTestFiles = [
+        path13.join(dirname6, `${nameWithoutExt}.spec${ext}`),
+        path13.join(dirname6, `${nameWithoutExt}.test${ext}`),
+        path13.join(dirname6, "__tests__", `${nameWithoutExt}${ext}`),
+        path13.join(dirname6, "tests", `${nameWithoutExt}${ext}`),
+        path13.join(dirname6, "test", `${nameWithoutExt}${ext}`)
+      ];
+      for (const testFile of possibleTestFiles) {
+        if (fs9.existsSync(testFile) && !testFiles.includes(testFile)) {
+          testFiles.push(testFile);
+        }
+      }
+    }
+  }
+  return testFiles;
+}
+async function getTestFilesFromGraph(sourceFiles) {
+  const testFiles = [];
+  const candidateTestFiles = getTestFilesFromConvention(sourceFiles);
+  if (sourceFiles.length === 0) {
+    return testFiles;
+  }
+  for (const testFile of candidateTestFiles) {
+    try {
+      const content = fs9.readFileSync(testFile, "utf-8");
+      const testDir = path13.dirname(testFile);
+      const importRegex = /import\s+.*?\s+from\s+['"]([^'"]+)['"]/g;
+      let match;
+      while ((match = importRegex.exec(content)) !== null) {
+        const importPath = match[1];
+        let resolvedImport;
+        if (importPath.startsWith(".")) {
+          resolvedImport = path13.resolve(testDir, importPath);
+          const existingExt = path13.extname(resolvedImport);
+          if (!existingExt) {
+            for (const extToTry of [
+              ".ts",
+              ".tsx",
+              ".js",
+              ".jsx",
+              ".mjs",
+              ".cjs"
+            ]) {
+              const withExt = resolvedImport + extToTry;
+              if (sourceFiles.includes(withExt) || fs9.existsSync(withExt)) {
+                resolvedImport = withExt;
+                break;
+              }
+            }
+          }
+        } else {
+          continue;
+        }
+        const importBasename = path13.basename(resolvedImport, path13.extname(resolvedImport));
+        const importDir = path13.dirname(resolvedImport);
+        for (const sourceFile of sourceFiles) {
+          const sourceDir = path13.dirname(sourceFile);
+          const sourceBasename = path13.basename(sourceFile, path13.extname(sourceFile));
+          const isRelatedDir = importDir === sourceDir || importDir === path13.join(sourceDir, "__tests__") || importDir === path13.join(sourceDir, "tests") || importDir === path13.join(sourceDir, "test");
+          if (resolvedImport === sourceFile || importBasename === sourceBasename && isRelatedDir) {
+            if (!testFiles.includes(testFile)) {
+              testFiles.push(testFile);
+            }
+            break;
+          }
+        }
+      }
+      const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+      while ((match = requireRegex.exec(content)) !== null) {
+        const importPath = match[1];
+        if (importPath.startsWith(".")) {
+          let resolvedImport = path13.resolve(testDir, importPath);
+          const existingExt = path13.extname(resolvedImport);
+          if (!existingExt) {
+            for (const extToTry of [
+              ".ts",
+              ".tsx",
+              ".js",
+              ".jsx",
+              ".mjs",
+              ".cjs"
+            ]) {
+              const withExt = resolvedImport + extToTry;
+              if (sourceFiles.includes(withExt) || fs9.existsSync(withExt)) {
+                resolvedImport = withExt;
+                break;
+              }
+            }
+          }
+          const importDir = path13.dirname(resolvedImport);
+          const importBasename = path13.basename(resolvedImport, path13.extname(resolvedImport));
+          for (const sourceFile of sourceFiles) {
+            const sourceDir = path13.dirname(sourceFile);
+            const sourceBasename = path13.basename(sourceFile, path13.extname(sourceFile));
+            const isRelatedDir = importDir === sourceDir || importDir === path13.join(sourceDir, "__tests__") || importDir === path13.join(sourceDir, "tests") || importDir === path13.join(sourceDir, "test");
+            if (resolvedImport === sourceFile || importBasename === sourceBasename && isRelatedDir) {
+              if (!testFiles.includes(testFile)) {
+                testFiles.push(testFile);
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return testFiles;
+}
+function buildTestCommand(framework, scope, files, coverage) {
+  switch (framework) {
+    case "bun": {
+      const args = ["bun", "test"];
+      if (coverage)
+        args.push("--coverage");
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "vitest": {
+      const args = ["npx", "vitest", "run"];
+      if (coverage)
+        args.push("--coverage");
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "jest": {
+      const args = ["npx", "jest"];
+      if (coverage)
+        args.push("--coverage");
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "mocha": {
+      const args = ["npx", "mocha"];
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "pytest": {
+      const isWindows = process.platform === "win32";
+      const args = isWindows ? ["python", "-m", "pytest"] : ["python3", "-m", "pytest"];
+      if (coverage)
+        args.push("--cov=.", "--cov-report=term-missing");
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "cargo": {
+      const args = ["cargo", "test"];
+      if (scope !== "all" && files.length > 0) {
+        args.push(...files);
+      }
+      return args;
+    }
+    case "pester": {
+      if (scope !== "all" && files.length > 0) {
+        const escapedFiles = files.map((f) => f.replace(/'/g, "''").replace(/`/g, "``").replace(/\$/g, "`$"));
+        const psCommand = `Invoke-Pester -Path @('${escapedFiles.join("','")}')`;
+        const utf16Bytes = Buffer.from(psCommand, "utf16le");
+        const base64Command = utf16Bytes.toString("base64");
+        const args = ["pwsh", "-EncodedCommand", base64Command];
+        return args;
+      }
+      return ["pwsh", "-Command", "Invoke-Pester"];
+    }
+    default:
+      return null;
+  }
+}
+function parseTestOutput(framework, output) {
+  const totals = {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    total: 0
+  };
+  let coveragePercent;
+  switch (framework) {
+    case "vitest":
+    case "jest":
+    case "bun": {
+      const jsonMatch = output.match(/\{[\s\S]*"testResults"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.numTotalTests !== undefined) {
+            totals.passed = parsed.numPassedTests || 0;
+            totals.failed = parsed.numFailedTests || 0;
+            totals.skipped = parsed.numPendingTests || 0;
+            totals.total = parsed.numTotalTests || 0;
+          }
+          if (parsed.coverage !== undefined) {
+            coveragePercent = parsed.coverage;
+          }
+        } catch {}
+      }
+      if (totals.total === 0) {
+        const passMatch = output.match(/(\d+)\s+pass(ing|ed)?/);
+        const failMatch = output.match(/(\d+)\s+fail(ing|ed)?/);
+        const skipMatch = output.match(/(\d+)\s+skip(ping|ped)?/);
+        if (passMatch)
+          totals.passed = parseInt(passMatch[1], 10);
+        if (failMatch)
+          totals.failed = parseInt(failMatch[1], 10);
+        if (skipMatch)
+          totals.skipped = parseInt(skipMatch[1], 10);
+        totals.total = totals.passed + totals.failed + totals.skipped;
+      }
+      const coverageMatch = output.match(/All files[^\d]*(\d+\.?\d*)\s*%/);
+      if (!coveragePercent && coverageMatch) {
+        coveragePercent = parseFloat(coverageMatch[1]);
+      }
+      break;
+    }
+    case "mocha": {
+      const passMatch = output.match(/(\d+)\s+passing/);
+      const failMatch = output.match(/(\d+)\s+failing/);
+      const pendingMatch = output.match(/(\d+)\s+pending/);
+      if (passMatch)
+        totals.passed = parseInt(passMatch[1], 10);
+      if (failMatch)
+        totals.failed = parseInt(failMatch[1], 10);
+      if (pendingMatch)
+        totals.skipped = parseInt(pendingMatch[1], 10);
+      totals.total = totals.passed + totals.failed + totals.skipped;
+      break;
+    }
+    case "pytest": {
+      const passMatch = output.match(/(\d+)\s+passed/);
+      const failMatch = output.match(/(\d+)\s+failed/);
+      const skipMatch = output.match(/(\d+)\s+skipped/);
+      if (passMatch)
+        totals.passed = parseInt(passMatch[1], 10);
+      if (failMatch)
+        totals.failed = parseInt(failMatch[1], 10);
+      if (skipMatch)
+        totals.skipped = parseInt(skipMatch[1], 10);
+      totals.total = totals.passed + totals.failed + totals.skipped;
+      const coverageMatch = output.match(/TOTAL\s+(\d+\.?\d*)\s*%/);
+      if (coverageMatch) {
+        coveragePercent = parseFloat(coverageMatch[1]);
+      }
+      break;
+    }
+    case "cargo": {
+      const passMatch = output.match(/test result: ok\. (\d+) passed/);
+      const failMatch = output.match(/test result: FAILED\. (\d+) passed; (\d+) failed/);
+      if (failMatch) {
+        totals.passed = parseInt(failMatch[1], 10);
+        totals.failed = parseInt(failMatch[2], 10);
+      } else if (passMatch) {
+        totals.passed = parseInt(passMatch[1], 10);
+      }
+      totals.total = totals.passed + totals.failed;
+      break;
+    }
+    case "pester": {
+      const passMatch = output.match(/Passed:\s*(\d+)/);
+      const failMatch = output.match(/Failed:\s*(\d+)/);
+      const skipMatch = output.match(/Skipped:\s*(\d+)/);
+      if (passMatch)
+        totals.passed = parseInt(passMatch[1], 10);
+      if (failMatch)
+        totals.failed = parseInt(failMatch[1], 10);
+      if (skipMatch)
+        totals.skipped = parseInt(skipMatch[1], 10);
+      totals.total = totals.passed + totals.failed + totals.skipped;
+      break;
+    }
+    default:
+      break;
+  }
+  return { totals, coveragePercent };
+}
+async function runTests(framework, scope, files, coverage, timeout_ms) {
+  const command = buildTestCommand(framework, scope, files, coverage);
+  if (!command) {
+    return {
+      success: false,
+      framework,
+      scope,
+      error: `No test command available for framework: ${framework}`,
+      message: "Install a supported test framework to run tests"
+    };
+  }
+  const commandStr = command.join(" ");
+  if (commandStr.length > MAX_COMMAND_LENGTH2) {
+    return {
+      success: false,
+      framework,
+      scope,
+      command,
+      error: "Command exceeds maximum allowed length"
+    };
+  }
+  const startTime = Date.now();
+  try {
+    const proc = Bun.spawn(command, {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const exitPromise = proc.exited;
+    const timeoutPromise = new Promise((resolve7) => setTimeout(() => {
+      proc.kill();
+      resolve7(-1);
+    }, timeout_ms));
+    const exitCode = await Promise.race([exitPromise, timeoutPromise]);
+    const duration_ms = Date.now() - startTime;
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text()
+    ]);
+    let output = stdout;
+    if (stderr) {
+      output += (output ? `
+` : "") + stderr;
+    }
+    const outputBytes = Buffer.byteLength(output, "utf-8");
+    if (outputBytes > MAX_OUTPUT_BYTES3) {
+      let truncIndex = MAX_OUTPUT_BYTES3;
+      while (truncIndex > 0) {
+        const truncated = output.slice(0, truncIndex);
+        if (Buffer.byteLength(truncated, "utf-8") <= MAX_OUTPUT_BYTES3) {
+          break;
+        }
+        truncIndex--;
+      }
+      output = output.slice(0, truncIndex) + `
+... (output truncated)`;
+    }
+    const { totals, coveragePercent } = parseTestOutput(framework, output);
+    const testPassed = exitCode === 0 && totals.failed === 0;
+    if (testPassed) {
+      const result = {
+        success: true,
+        framework,
+        scope,
+        command,
+        timeout_ms,
+        duration_ms,
+        totals,
+        rawOutput: output
+      };
+      if (coveragePercent !== undefined) {
+        result.coveragePercent = coveragePercent;
+      }
+      result.message = `${framework} tests passed (${totals.passed}/${totals.total})`;
+      if (coveragePercent !== undefined) {
+        result.message += ` with ${coveragePercent}% coverage`;
+      }
+      return result;
+    } else {
+      const result = {
+        success: false,
+        framework,
+        scope,
+        command,
+        timeout_ms,
+        duration_ms,
+        totals,
+        rawOutput: output,
+        error: `Tests failed with ${totals.failed} failures`,
+        message: `${framework} tests failed (${totals.failed}/${totals.total} failed)`
+      };
+      if (coveragePercent !== undefined) {
+        result.coveragePercent = coveragePercent;
+      }
+      return result;
+    }
+  } catch (error93) {
+    const duration_ms = Date.now() - startTime;
+    return {
+      success: false,
+      framework,
+      scope,
+      command,
+      timeout_ms,
+      duration_ms,
+      error: error93 instanceof Error ? `Execution failed: ${error93.message}` : "Execution failed: unknown error"
+    };
+  }
+}
+var SOURCE_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".rs",
+  ".ps1",
+  ".psm1"
+]);
+var SKIP_DIRECTORIES2 = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "vendor",
+  ".svn",
+  ".hg",
+  "__pycache__",
+  ".pytest_cache",
+  "target"
+]);
+function findSourceFiles2(dir, files = []) {
+  let entries;
+  try {
+    entries = fs9.readdirSync(dir);
+  } catch {
+    return files;
+  }
+  entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  for (const entry of entries) {
+    if (SKIP_DIRECTORIES2.has(entry))
+      continue;
+    const fullPath = path13.join(dir, entry);
+    let stat;
+    try {
+      stat = fs9.statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      findSourceFiles2(fullPath, files);
+    } else if (stat.isFile()) {
+      const ext = path13.extname(fullPath).toLowerCase();
+      if (SOURCE_EXTENSIONS.has(ext)) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+var test_runner = tool({
+  description: 'Run project tests with framework detection. Supports bun, vitest, jest, mocha, pytest, cargo, and pester. Returns deterministic normalized JSON with framework, scope, command, totals, coverage, duration, success status, and failures. Use scope "all" for full suite, "convention" to map source files to test files, or "graph" to find related tests via imports.',
+  args: {
+    scope: tool.schema.enum(["all", "convention", "graph"]).optional().describe('Test scope: "all" runs full suite, "convention" maps source files to test files by naming, "graph" finds related tests via imports'),
+    files: tool.schema.array(tool.schema.string()).optional().describe("Specific files to test (used with convention or graph scope)"),
+    coverage: tool.schema.boolean().optional().describe("Enable coverage reporting if supported"),
+    timeout_ms: tool.schema.number().optional().describe("Timeout in milliseconds (default 60000, max 300000)")
+  },
+  async execute(args, _context) {
+    if (!validateArgs2(args)) {
+      const errorResult = {
+        success: false,
+        framework: "none",
+        scope: "all",
+        error: "Invalid arguments",
+        message: 'scope must be "all", "convention", or "graph"; files must be array of strings; coverage must be boolean; timeout_ms must be a positive number'
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const scope = args.scope || "all";
+    const files = args.files || [];
+    const coverage = args.coverage || false;
+    const timeout_ms = Math.min(args.timeout_ms || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+    const framework = await detectTestFramework();
+    if (framework === "none") {
+      const result2 = {
+        success: false,
+        framework: "none",
+        scope,
+        error: "No test framework detected",
+        message: "No supported test framework found. Install bun, vitest, jest, mocha, pytest, cargo, or pester.",
+        totals: {
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          total: 0
+        }
+      };
+      return JSON.stringify(result2, null, 2);
+    }
+    let testFiles = [];
+    let graphFallbackReason;
+    let effectiveScope = scope;
+    if (scope === "all") {
+      testFiles = [];
+    } else if (scope === "convention") {
+      const sourceFiles = args.files && args.files.length > 0 ? args.files.filter((f) => {
+        const ext = path13.extname(f).toLowerCase();
+        return SOURCE_EXTENSIONS.has(ext);
+      }) : findSourceFiles2(process.cwd());
+      testFiles = getTestFilesFromConvention(sourceFiles);
+    } else if (scope === "graph") {
+      const sourceFiles = args.files && args.files.length > 0 ? args.files.filter((f) => {
+        const ext = path13.extname(f).toLowerCase();
+        return SOURCE_EXTENSIONS.has(ext);
+      }) : findSourceFiles2(process.cwd());
+      const graphTestFiles = await getTestFilesFromGraph(sourceFiles);
+      if (graphTestFiles.length > 0) {
+        testFiles = graphTestFiles;
+      } else {
+        graphFallbackReason = "imports resolution returned no results, falling back to convention";
+        effectiveScope = "convention";
+        testFiles = getTestFilesFromConvention(sourceFiles);
+      }
+    }
+    const result = await runTests(framework, effectiveScope, testFiles, coverage, timeout_ms);
+    if (graphFallbackReason && result.message) {
+      result.message = `${result.message} (${graphFallbackReason})`;
+    }
+    return JSON.stringify(result, null, 2);
+  }
+});
 // src/index.ts
 var OpenCodeSwarm = async (ctx) => {
   const { config: config3, loadedFromFile } = loadPluginConfigWithMeta(ctx.directory);
@@ -32239,6 +33594,7 @@ var OpenCodeSwarm = async (ctx) => {
     name: "opencode-swarm",
     agent: agents,
     tool: {
+      checkpoint,
       detect_domains,
       extract_code_blocks,
       gitingest,
@@ -32246,7 +33602,9 @@ var OpenCodeSwarm = async (ctx) => {
       lint,
       diff,
       retrieve_summary,
-      secretscan
+      secretscan,
+      symbols,
+      test_runner
     },
     config: async (opencodeConfig) => {
       if (!opencodeConfig.agent) {

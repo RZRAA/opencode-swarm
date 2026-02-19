@@ -1,3 +1,4 @@
+export { checkpoint } from './checkpoint';
 export { type DiffErrorResult, type DiffResult, diff } from './diff';
 export { detect_domains } from './domain-detector';
 export { extract_code_blocks } from './file-extractor';
@@ -10,3 +11,5 @@ export {
 	type SecretscanResult,
 	secretscan,
 } from './secretscan';
+export { symbols } from './symbols';
+export { test_runner } from './test-runner';
