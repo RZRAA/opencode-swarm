@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-02-19
+
+### Added
+- **`imports` tool** — Agent-accessible tool to list imported modules in JavaScript/TypeScript files via AST parsing. Exports: `listImports(filePath: string): ImportInfo[]`. Security: validates path via `validateSwarmPath`, rejects non-code extensions, no arbitrary code execution.
+- **`lint` tool** — Agent-accessible tool to run biome or eslint on the codebase. Exports: `runLint(mode: 'check' | 'fix', linter?: 'biome' | 'eslint'): LintResult`. Security: bounded output (512KB), command length limit (500 chars), error handling without throwing.
+- **`secretscan` tool** — Agent-accessible tool to scan for secrets/credentials in the codebase. Exports: `runSecretScan(paths?: string[]): SecretScanResult`. Security: bounded output (1MB), pattern-based detection (no API calls), error handling without throwing.
+- **Architect pre-reviewer workflow reordering** — Architect Phase 5 now runs security tools (lint + secretscan) BEFORE reviewer agent. Updated workflow: coder → diff → security (lint + secretscan) → review → verify → adversarial.
+- **`LintConfigSchema`** — Optional `lint: { enabled: boolean, mode: 'check' | 'fix', linter: 'biome' | 'eslint' }` in plugin config. Defaults to `{ enabled: true, mode: 'check', linter: 'biome' }`.
+- **`SecretScanConfigSchema`** — Optional `secretscan: { enabled: boolean }` in plugin config. Defaults to `{ enabled: true }`.
+- **System-enhancer lint/secretscan disabled hints** — When `lint.enabled: false`, injects `[SWARM HINT] Linter disabled` into architect session. When `secretscan.enabled: false`, injects `[SWARM HINT] Secret scanning disabled`. Injected in both Path A and Path B.
+
+### Tests
+- 42 new tests: imports tool (6), lint tool (37), secretscan tool (7), system-enhancer disabled hints (4).
+- Total: 2031 tests across 78 files, all passing.
+
+### Rollback Note
+If critical validation fails after publishing v6.3.0, restore the following files from the pre-bump commit (the commit before version bump):
+
+```bash
+# Find the pre-bump commit
+git log --oneline -2
+
+# Restore package.json
+git checkout <pre-bump-commit> -- package.json
+
+# Restore CHANGELOG.md
+git checkout <pre-bump-commit> -- CHANGELOG.md
+
+# Restore v6.3 tool/prompt files (example for tools/)
+git checkout <pre-bump-commit> -- src/tools/
+```
+
+This preserves all git history and is non-destructive. After restoring, amend the version bump or create a new release after fixing the validation issue.
+
 ## [6.2.0] - 2026-02-19
 
 ### Added

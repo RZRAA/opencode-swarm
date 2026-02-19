@@ -13842,6 +13842,62 @@ var CompactionAdvisoryConfigSchema = exports_external.object({
   thresholds: exports_external.array(exports_external.number().int().min(10).max(500)).default([50, 75, 100, 125, 150]),
   message: exports_external.string().default("[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.")
 });
+var LintConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  mode: exports_external.enum(["check", "fix"]).default("check"),
+  linter: exports_external.enum(["biome", "eslint", "auto"]).default("auto"),
+  patterns: exports_external.array(exports_external.string()).default([
+    "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+    "**/biome.json",
+    "**/biome.jsonc"
+  ]),
+  exclude: exports_external.array(exports_external.string()).default([
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.git/**",
+    "**/coverage/**",
+    "**/*.min.js"
+  ])
+});
+var SecretscanConfigSchema = exports_external.object({
+  enabled: exports_external.boolean().default(true),
+  patterns: exports_external.array(exports_external.string()).default([
+    "**/*.{env,properties,yml,yaml,json,js,ts}",
+    "**/.env*",
+    "**/secrets/**",
+    "**/credentials/**",
+    "**/config/**/*.ts",
+    "**/config/**/*.js"
+  ]),
+  exclude: exports_external.array(exports_external.string()).default([
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.git/**",
+    "**/coverage/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.js",
+    "**/*.spec.ts",
+    "**/*.spec.js"
+  ]),
+  extensions: exports_external.array(exports_external.string()).default([
+    ".env",
+    ".properties",
+    ".yml",
+    ".yaml",
+    ".json",
+    ".js",
+    ".ts",
+    ".py",
+    ".rb",
+    ".go",
+    ".java",
+    ".cs",
+    ".php"
+  ])
+});
 var GuardrailsProfileSchema = exports_external.object({
   max_tool_calls: exports_external.number().min(0).max(1000).optional(),
   max_duration_minutes: exports_external.number().min(0).max(480).optional(),
@@ -13956,7 +14012,9 @@ var PluginConfigSchema = exports_external.object({
   integration_analysis: IntegrationAnalysisConfigSchema.optional(),
   docs: DocsConfigSchema.optional(),
   ui_review: UIReviewConfigSchema.optional(),
-  compaction_advisory: CompactionAdvisoryConfigSchema.optional()
+  compaction_advisory: CompactionAdvisoryConfigSchema.optional(),
+  lint: LintConfigSchema.optional(),
+  secretscan: SecretscanConfigSchema.optional()
 });
 
 // src/config/loader.ts
@@ -14127,7 +14185,7 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
    - If NEEDS_REVISION: Revise plan and re-submit to critic (max 2 cycles)
    - If REJECTED after 2 cycles: Escalate to user with explanation
    - ONLY AFTER critic approval: Proceed to implementation (Phase 3+)
-7. **MANDATORY QA GATE (Execute AFTER every coder task)** \u2014 sequence: coder \u2192 diff \u2192 review \u2192 security review \u2192 verification tests \u2192 adversarial tests \u2192 next task.
+7. **MANDATORY QA GATE (Execute AFTER every coder task)** \u2014 sequence: coder \u2192 diff \u2192 imports \u2192 lint fix \u2192 lint check \u2192 secretscan \u2192 (NO FINDINGS \u2192 proceed to reviewer) \u2192 reviewer \u2192 security review \u2192 verification tests \u2192 adversarial tests \u2192 next task.
    - After coder completes: run \`diff\` tool. If \`hasContractChanges\` is true \u2192 delegate {{AGENT_PREFIX}}explorer for integration impact analysis. BREAKING \u2192 return to coder. COMPATIBLE \u2192 proceed.
    - Delegate {{AGENT_PREFIX}}reviewer with CHECK dimensions. REJECTED \u2192 return to coder (max {{QA_RETRY_LIMIT}} attempts). APPROVED \u2192 continue.
    - If file matches security globs (auth, api, crypto, security, middleware, session, token) OR coder output contains security keywords \u2192 delegate {{AGENT_PREFIX}}reviewer AGAIN with security-only CHECK. REJECTED \u2192 return to coder.
@@ -14154,7 +14212,7 @@ You THINK. Subagents DO. You have the largest context window and strongest reaso
 
 SMEs advise only. Reviewer and critic review only. None of them write code.
 
-Available Tools: diff (structured git diff with contract change detection)
+Available Tools: diff (structured git diff with contract change detection), imports (dependency audit), lint (code quality), secretscan (secret detection)
 
 ## DELEGATION FORMAT
 
@@ -14300,12 +14358,15 @@ For each task (respecting dependencies):
 5a. **UI DESIGN GATE** (conditional \u2014 Rule 9): If task matches UI trigger \u2192 {{AGENT_PREFIX}}designer produces scaffold \u2192 pass scaffold to coder as INPUT. If no match \u2192 skip.
 5b. {{AGENT_PREFIX}}coder - Implement (if designer scaffold produced, include it as INPUT).
 5c. Run \`diff\` tool. If \`hasContractChanges\` \u2192 {{AGENT_PREFIX}}explorer integration analysis. BREAKING \u2192 coder retry.
-5d. {{AGENT_PREFIX}}reviewer - General review. REJECTED (< {{QA_RETRY_LIMIT}}) \u2192 coder retry. REJECTED ({{QA_RETRY_LIMIT}}) \u2192 escalate.
-5e. Security gate: if file matches security globs or content has security keywords \u2192 {{AGENT_PREFIX}}reviewer security-only. REJECTED \u2192 coder retry.
-5f. {{AGENT_PREFIX}}test_engineer - Verification tests. FAIL \u2192 coder retry from 5d.
-5g. {{AGENT_PREFIX}}test_engineer - Adversarial tests. FAIL \u2192 coder retry from 5d.
-5h. COVERAGE CHECK: If test_engineer reports coverage < 70% \u2192 delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
-5i. Update plan.md [x], proceed to next task.
+5d. Run \`imports\` tool for dependency audit. ISSUES \u2192 return to coder.
+5e. Run \`lint\` tool with fix mode for auto-fixes. If issues remain \u2192 run \`lint\` tool with check mode. FAIL \u2192 return to coder.
+5f. Run \`secretscan\` tool. FINDINGS \u2192 return to coder. NO FINDINGS \u2192 proceed to reviewer.
+5g. {{AGENT_PREFIX}}reviewer - General review. REJECTED (< {{QA_RETRY_LIMIT}}) \u2192 coder retry. REJECTED ({{QA_RETRY_LIMIT}}) \u2192 escalate.
+5h. Security gate: if file matches security globs OR content has security keywords OR secretscan has ANY findings \u2192 {{AGENT_PREFIX}}reviewer security-only. REJECTED \u2192 coder retry.
+5i. {{AGENT_PREFIX}}test_engineer - Verification tests. FAIL \u2192 coder retry from 5g.
+5j. {{AGENT_PREFIX}}test_engineer - Adversarial tests. FAIL \u2192 coder retry from 5g.
+5k. COVERAGE CHECK: If test_engineer reports coverage < 70% \u2192 delegate {{AGENT_PREFIX}}test_engineer for an additional test pass targeting uncovered paths. This is a soft guideline; use judgment for trivial tasks.
+5l. Update plan.md [x], proceed to next task.
 
 ### Phase 6: Phase Complete
 1. {{AGENT_PREFIX}}explorer - Rescan
@@ -17653,6 +17714,12 @@ function createSystemEnhancerHook(config2, directory) {
           if (config2.docs?.enabled === false) {
             tryInject("[SWARM CONFIG] Docs agent is DISABLED. Skip docs delegation in Phase 6.");
           }
+          if (config2.lint?.enabled === false) {
+            tryInject("[SWARM CONFIG] Lint gate is DISABLED. Skip lint check/fix in QA sequence.");
+          }
+          if (config2.secretscan?.enabled === false) {
+            tryInject("[SWARM CONFIG] Secretscan gate is DISABLED. Skip secretscan in QA sequence.");
+          }
           const sessionId_retro = _input.sessionID;
           const activeAgent_retro = swarmState.activeAgent.get(sessionId_retro ?? "");
           const isArchitect = !activeAgent_retro || stripKnownSwarmPrefix(activeAgent_retro) === "architect";
@@ -17827,6 +17894,28 @@ function createSystemEnhancerHook(config2, directory) {
         }
         if (config2.docs?.enabled === false) {
           const text = "[SWARM CONFIG] Docs agent is DISABLED. Skip docs delegation in Phase 6.";
+          candidates.push({
+            id: `candidate-${idCounter++}`,
+            kind: "phase",
+            text,
+            tokens: estimateTokens(text),
+            priority: 1,
+            metadata: { contentType: "prose" }
+          });
+        }
+        if (config2.lint?.enabled === false) {
+          const text = "[SWARM CONFIG] Lint gate is DISABLED. Skip lint check/fix in QA sequence.";
+          candidates.push({
+            id: `candidate-${idCounter++}`,
+            kind: "phase",
+            text,
+            tokens: estimateTokens(text),
+            priority: 1,
+            metadata: { contentType: "prose" }
+          });
+        }
+        if (config2.secretscan?.enabled === false) {
+          const text = "[SWARM CONFIG] Secretscan gate is DISABLED. Skip secretscan in QA sequence.";
           candidates.push({
             id: `candidate-${idCounter++}`,
             kind: "phase",
@@ -30940,6 +31029,510 @@ var gitingest = tool({
     return fetchGitingest(args);
   }
 });
+// src/tools/imports.ts
+import * as fs5 from "fs";
+import * as path9 from "path";
+var MAX_FILE_PATH_LENGTH = 500;
+var MAX_SYMBOL_LENGTH = 256;
+var MAX_FILE_SIZE_BYTES = 1024 * 1024;
+var MAX_CONSUMERS = 100;
+var SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+var BINARY_SIGNATURES = [
+  0,
+  2303741511,
+  4292411360,
+  1195984440,
+  626017350,
+  1347093252
+];
+var BINARY_PREFIX_BYTES = 4;
+var BINARY_NULL_CHECK_BYTES = 8192;
+var BINARY_NULL_THRESHOLD = 0.1;
+function containsPathTraversal(str) {
+  return /\.\.[/\\]/.test(str);
+}
+function containsControlChars(str) {
+  return /[\0\t\r\n]/.test(str);
+}
+function validateFileInput(file3) {
+  if (!file3 || file3.length === 0) {
+    return "file is required";
+  }
+  if (file3.length > MAX_FILE_PATH_LENGTH) {
+    return `file exceeds maximum length of ${MAX_FILE_PATH_LENGTH}`;
+  }
+  if (containsControlChars(file3)) {
+    return "file contains control characters";
+  }
+  if (containsPathTraversal(file3)) {
+    return "file contains path traversal";
+  }
+  return null;
+}
+function validateSymbolInput(symbol3) {
+  if (symbol3 === undefined || symbol3 === "") {
+    return null;
+  }
+  if (symbol3.length > MAX_SYMBOL_LENGTH) {
+    return `symbol exceeds maximum length of ${MAX_SYMBOL_LENGTH}`;
+  }
+  if (containsControlChars(symbol3)) {
+    return "symbol contains control characters";
+  }
+  if (containsPathTraversal(symbol3)) {
+    return "symbol contains path traversal";
+  }
+  return null;
+}
+function isBinaryFile(filePath, buffer) {
+  const ext = path9.extname(filePath).toLowerCase();
+  if (ext === ".json" || ext === ".md" || ext === ".txt") {
+    return false;
+  }
+  if (buffer.length >= BINARY_PREFIX_BYTES) {
+    const prefix = buffer.subarray(0, BINARY_PREFIX_BYTES);
+    const uint323 = prefix.readUInt32BE(0);
+    for (const sig of BINARY_SIGNATURES) {
+      if (uint323 === sig)
+        return true;
+    }
+  }
+  let nullCount = 0;
+  const checkLen = Math.min(buffer.length, BINARY_NULL_CHECK_BYTES);
+  for (let i = 0;i < checkLen; i++) {
+    if (buffer[i] === 0)
+      nullCount++;
+  }
+  return nullCount > checkLen * BINARY_NULL_THRESHOLD;
+}
+function parseImports(content, targetFile, targetSymbol) {
+  const imports = [];
+  let resolvedTarget;
+  try {
+    resolvedTarget = path9.resolve(targetFile);
+  } catch {
+    resolvedTarget = targetFile;
+  }
+  const targetBasename = path9.basename(targetFile, path9.extname(targetFile));
+  const targetWithExt = targetFile;
+  const targetWithoutExt = targetFile.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/i, "");
+  const normalizedTargetWithExt = path9.normalize(targetWithExt).replace(/\\/g, "/");
+  const normalizedTargetWithoutExt = path9.normalize(targetWithoutExt).replace(/\\/g, "/");
+  const importRegex = /import\s+(?:\{[\s\S]*?\}|(?:\*\s+as\s+\w+)|\w+)\s+from\s+['"`]([^'"`]+)['"`]|import\s+['"`]([^'"`]+)['"`]|require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g;
+  let match;
+  while ((match = importRegex.exec(content)) !== null) {
+    const modulePath = match[1] || match[2] || match[3];
+    if (!modulePath)
+      continue;
+    const beforeMatch = content.substring(0, match.index);
+    const lineNum = (beforeMatch.match(/\n/g) || []).length + 1;
+    const matchedString = match[0];
+    let importType = "named";
+    if (matchedString.includes("* as")) {
+      importType = "namespace";
+    } else if (/^import\s+\{/.test(matchedString)) {
+      importType = "named";
+    } else if (/^import\s+\w+\s+from\s+['"`]/.test(matchedString)) {
+      importType = "default";
+    } else if (/^import\s+['"`]/m.test(matchedString)) {
+      importType = "sideeffect";
+    } else if (matchedString.includes("require(")) {
+      importType = "require";
+    }
+    const normalizedModule = modulePath.replace(/^\.\//, "").replace(/^\.\.\\/, "../");
+    let isMatch = false;
+    const targetDir = path9.dirname(targetFile);
+    const targetExt = path9.extname(targetFile);
+    const targetBasenameNoExt = path9.basename(targetFile, targetExt);
+    const moduleNormalized = modulePath.replace(/\\/g, "/").replace(/^\.\//, "");
+    const moduleName = modulePath.split(/[/\\]/).pop() || "";
+    const moduleNameNoExt = moduleName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/i, "");
+    if (modulePath === targetBasename || modulePath === targetBasenameNoExt || modulePath === "./" + targetBasename || modulePath === "./" + targetBasenameNoExt || modulePath === "../" + targetBasename || modulePath === "../" + targetBasenameNoExt || moduleNormalized === normalizedTargetWithExt || moduleNormalized === normalizedTargetWithoutExt || modulePath.endsWith("/" + targetBasename) || modulePath.endsWith("\\" + targetBasename) || modulePath.endsWith("/" + targetBasenameNoExt) || modulePath.endsWith("\\" + targetBasenameNoExt) || moduleNameNoExt === targetBasenameNoExt || "./" + moduleNameNoExt === targetBasenameNoExt || moduleName === targetBasename || moduleName === targetBasenameNoExt) {
+      isMatch = true;
+    }
+    if (isMatch && targetSymbol) {
+      if (importType === "namespace" || importType === "sideeffect") {
+        isMatch = false;
+      } else {
+        const namedMatch = matchedString.match(/import\s+\{([\s\S]*?)\}\s+from/);
+        if (namedMatch) {
+          const importedNames = namedMatch[1].split(",").map((s) => {
+            const parts = s.trim().split(/\s+as\s+/i);
+            const originalName = parts[0].trim();
+            const aliasName = parts[1]?.trim();
+            return { original: originalName, alias: aliasName };
+          });
+          isMatch = importedNames.some(({ original, alias }) => original === targetSymbol || alias === targetSymbol);
+        } else if (importType === "default") {
+          const defaultMatch = matchedString.match(/^import\s+(\w+)\s+from/m);
+          if (defaultMatch) {
+            const defaultName = defaultMatch[1];
+            isMatch = defaultName === targetSymbol;
+          }
+        }
+      }
+    }
+    if (isMatch) {
+      imports.push({
+        line: lineNum,
+        imports: modulePath,
+        importType,
+        raw: matchedString.trim()
+      });
+    }
+  }
+  return imports;
+}
+var SKIP_DIRECTORIES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "vendor",
+  ".svn",
+  ".hg"
+]);
+function findSourceFiles(dir, files = [], stats = { skippedDirs: [], skippedFiles: 0, fileErrors: [] }) {
+  let entries;
+  try {
+    entries = fs5.readdirSync(dir);
+  } catch (e) {
+    stats.fileErrors.push({
+      path: dir,
+      reason: e instanceof Error ? e.message : "readdir failed"
+    });
+    return files;
+  }
+  entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  for (const entry of entries) {
+    if (SKIP_DIRECTORIES.has(entry)) {
+      stats.skippedDirs.push(path9.join(dir, entry));
+      continue;
+    }
+    const fullPath = path9.join(dir, entry);
+    let stat;
+    try {
+      stat = fs5.statSync(fullPath);
+    } catch (e) {
+      stats.fileErrors.push({
+        path: fullPath,
+        reason: e instanceof Error ? e.message : "stat failed"
+      });
+      continue;
+    }
+    if (stat.isDirectory()) {
+      findSourceFiles(fullPath, files, stats);
+    } else if (stat.isFile()) {
+      const ext = path9.extname(fullPath).toLowerCase();
+      if (SUPPORTED_EXTENSIONS.includes(ext)) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+var imports = tool({
+  description: "Find all consumers that import from a given file. Returns JSON with file path, line numbers, and import metadata for each consumer. Useful for understanding dependency relationships.",
+  args: {
+    file: tool.schema.string().describe('Source file path to find importers for (e.g., "./src/utils.ts")'),
+    symbol: tool.schema.string().optional().describe('Optional specific symbol to filter imports (e.g., "MyClass")')
+  },
+  async execute(args, _context) {
+    let file3;
+    let symbol3;
+    try {
+      if (args && typeof args === "object") {
+        file3 = args.file;
+        symbol3 = args.symbol;
+      }
+    } catch {}
+    if (file3 === undefined) {
+      const errorResult = {
+        error: "invalid arguments: file is required",
+        target: "",
+        symbol: undefined,
+        consumers: [],
+        count: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const fileValidationError = validateFileInput(file3);
+    if (fileValidationError) {
+      const errorResult = {
+        error: `invalid file: ${fileValidationError}`,
+        target: file3,
+        symbol: symbol3,
+        consumers: [],
+        count: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const symbolValidationError = validateSymbolInput(symbol3);
+    if (symbolValidationError) {
+      const errorResult = {
+        error: `invalid symbol: ${symbolValidationError}`,
+        target: file3,
+        symbol: symbol3,
+        consumers: [],
+        count: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    try {
+      const targetFile = path9.resolve(file3);
+      if (!fs5.existsSync(targetFile)) {
+        const errorResult = {
+          error: `target file not found: ${file3}`,
+          target: file3,
+          symbol: symbol3,
+          consumers: [],
+          count: 0
+        };
+        return JSON.stringify(errorResult, null, 2);
+      }
+      const targetStat = fs5.statSync(targetFile);
+      if (!targetStat.isFile()) {
+        const errorResult = {
+          error: "target must be a file, not a directory",
+          target: file3,
+          symbol: symbol3,
+          consumers: [],
+          count: 0
+        };
+        return JSON.stringify(errorResult, null, 2);
+      }
+      const baseDir = path9.dirname(targetFile);
+      const scanStats = {
+        skippedDirs: [],
+        skippedFiles: 0,
+        fileErrors: []
+      };
+      const sourceFiles = findSourceFiles(baseDir, [], scanStats);
+      const filesToScan = sourceFiles.filter((f) => f !== targetFile).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).slice(0, MAX_CONSUMERS * 10);
+      const consumers = [];
+      let skippedFileCount = 0;
+      let totalMatchesFound = 0;
+      for (const filePath of filesToScan) {
+        if (consumers.length >= MAX_CONSUMERS)
+          break;
+        try {
+          const stat = fs5.statSync(filePath);
+          if (stat.size > MAX_FILE_SIZE_BYTES) {
+            skippedFileCount++;
+            continue;
+          }
+          const buffer = fs5.readFileSync(filePath);
+          if (isBinaryFile(filePath, buffer)) {
+            skippedFileCount++;
+            continue;
+          }
+          const content = buffer.toString("utf-8");
+          const fileImports = parseImports(content, targetFile, symbol3);
+          for (const imp of fileImports) {
+            totalMatchesFound++;
+            if (consumers.length >= MAX_CONSUMERS)
+              continue;
+            const exists = consumers.some((c) => c.file === filePath && c.line === imp.line);
+            if (exists)
+              continue;
+            consumers.push({
+              file: filePath,
+              line: imp.line,
+              imports: imp.imports,
+              importType: imp.importType,
+              raw: imp.raw
+            });
+          }
+        } catch (e) {
+          skippedFileCount++;
+        }
+      }
+      const result = {
+        target: file3,
+        symbol: symbol3,
+        consumers,
+        count: consumers.length
+      };
+      const parts = [];
+      if (filesToScan.length >= MAX_CONSUMERS * 10) {
+        parts.push(`Scanned ${filesToScan.length} files`);
+      }
+      if (skippedFileCount > 0) {
+        parts.push(`${skippedFileCount} skipped (size/binary/errors)`);
+      }
+      if (consumers.length >= MAX_CONSUMERS) {
+        const hidden = totalMatchesFound - consumers.length;
+        if (hidden > 0) {
+          parts.push(`Results limited to ${MAX_CONSUMERS} consumers (${hidden} hidden)`);
+        } else {
+          parts.push(`Results limited to ${MAX_CONSUMERS} consumers`);
+        }
+      }
+      if (parts.length > 0) {
+        result.message = parts.join("; ") + ".";
+      }
+      return JSON.stringify(result, null, 2);
+    } catch (e) {
+      const errorResult = {
+        error: e instanceof Error ? `scan failed: ${e.message || "internal error"}` : "scan failed: unknown error",
+        target: file3,
+        symbol: symbol3,
+        consumers: [],
+        count: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+  }
+});
+// src/tools/lint.ts
+var MAX_OUTPUT_BYTES = 512000;
+var MAX_COMMAND_LENGTH = 500;
+function validateArgs(args) {
+  if (typeof args !== "object" || args === null)
+    return false;
+  const obj = args;
+  if (obj.mode !== "fix" && obj.mode !== "check")
+    return false;
+  return true;
+}
+function getLinterCommand(linter, mode) {
+  const isWindows = process.platform === "win32";
+  switch (linter) {
+    case "biome":
+      if (mode === "fix") {
+        return isWindows ? ["npx", "biome", "check", "--write", "."] : ["npx", "biome", "check", "--write", "."];
+      }
+      return isWindows ? ["npx", "biome", "check", "."] : ["npx", "biome", "check", "."];
+    case "eslint":
+      if (mode === "fix") {
+        return isWindows ? ["npx", "eslint", ".", "--fix"] : ["npx", "eslint", ".", "--fix"];
+      }
+      return isWindows ? ["npx", "eslint", "."] : ["npx", "eslint", "."];
+  }
+}
+async function detectAvailableLinter() {
+  const DETECT_TIMEOUT = 2000;
+  try {
+    const biomeProc = Bun.spawn(["npx", "biome", "--version"], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const biomeExit = biomeProc.exited;
+    const timeout = new Promise((resolve4) => setTimeout(() => resolve4("timeout"), DETECT_TIMEOUT));
+    const result = await Promise.race([biomeExit, timeout]);
+    if (result === "timeout") {
+      biomeProc.kill();
+    } else if (biomeProc.exitCode === 0) {
+      return "biome";
+    }
+  } catch {}
+  try {
+    const eslintProc = Bun.spawn(["npx", "eslint", "--version"], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const eslintExit = eslintProc.exited;
+    const timeout = new Promise((resolve4) => setTimeout(() => resolve4("timeout"), DETECT_TIMEOUT));
+    const result = await Promise.race([eslintExit, timeout]);
+    if (result === "timeout") {
+      eslintProc.kill();
+    } else if (eslintProc.exitCode === 0) {
+      return "eslint";
+    }
+  } catch {}
+  return null;
+}
+async function runLint(linter, mode) {
+  const command = getLinterCommand(linter, mode);
+  const commandStr = command.join(" ");
+  if (commandStr.length > MAX_COMMAND_LENGTH) {
+    return {
+      success: false,
+      mode,
+      linter,
+      command,
+      error: "Command exceeds maximum allowed length"
+    };
+  }
+  try {
+    const proc = Bun.spawn(command, {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text()
+    ]);
+    const exitCode = await proc.exited;
+    let output = stdout;
+    if (stderr) {
+      output += (output ? `
+` : "") + stderr;
+    }
+    if (output.length > MAX_OUTPUT_BYTES) {
+      output = output.slice(0, MAX_OUTPUT_BYTES) + `
+... (output truncated)`;
+    }
+    const result = {
+      success: true,
+      mode,
+      linter,
+      command,
+      exitCode,
+      output
+    };
+    if (exitCode === 0) {
+      result.message = `${linter} ${mode} completed successfully with no issues`;
+    } else if (mode === "fix") {
+      result.message = `${linter} fix completed with exit code ${exitCode}. Run check mode to see remaining issues.`;
+    } else {
+      result.message = `${linter} check found issues (exit code ${exitCode}).`;
+    }
+    return result;
+  } catch (error93) {
+    return {
+      success: false,
+      mode,
+      linter,
+      command,
+      error: error93 instanceof Error ? `Execution failed: ${error93.message}` : "Execution failed: unknown error"
+    };
+  }
+}
+var lint = tool({
+  description: "Run project linter in check or fix mode. Supports biome and eslint. Returns JSON with success status, exit code, and output for architect pre-reviewer gate. Use check mode for CI/linting and fix mode to automatically apply fixes.",
+  args: {
+    mode: tool.schema.enum(["fix", "check"]).describe('Linting mode: "check" for read-only lint check, "fix" to automatically apply fixes')
+  },
+  async execute(args, _context) {
+    if (!validateArgs(args)) {
+      const errorResult = {
+        success: false,
+        mode: "check",
+        error: 'Invalid arguments: mode must be "fix" or "check"'
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const { mode } = args;
+    const linter = await detectAvailableLinter();
+    if (!linter) {
+      const errorResult = {
+        success: false,
+        mode,
+        error: "No linter found. Install biome or eslint to use this tool.",
+        message: "Run: npm install -D @biomejs/biome eslint"
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const result = await runLint(linter, mode);
+    return JSON.stringify(result, null, 2);
+  }
+});
 // src/tools/retrieve-summary.ts
 var RETRIEVE_MAX_BYTES = 10 * 1024 * 1024;
 var retrieve_summary = tool({
@@ -30968,6 +31561,643 @@ var retrieve_summary = tool({
       return `Error: summary content exceeds maximum size limit (10 MB).`;
     }
     return fullOutput;
+  }
+});
+// src/tools/secretscan.ts
+import * as fs6 from "fs";
+import * as path10 from "path";
+var MAX_FILE_PATH_LENGTH2 = 500;
+var MAX_FILE_SIZE_BYTES2 = 512 * 1024;
+var MAX_FILES_SCANNED = 1000;
+var MAX_FINDINGS = 100;
+var MAX_OUTPUT_BYTES2 = 512000;
+var MAX_LINE_LENGTH = 1e4;
+var MAX_CONTENT_BYTES = 50 * 1024;
+var BINARY_SIGNATURES2 = [
+  0,
+  2303741511,
+  4292411360,
+  1195984440,
+  626017350,
+  1347093252
+];
+var BINARY_PREFIX_BYTES2 = 4;
+var BINARY_NULL_CHECK_BYTES2 = 8192;
+var BINARY_NULL_THRESHOLD2 = 0.1;
+var DEFAULT_EXCLUDE_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "vendor",
+  ".svn",
+  ".hg",
+  ".gradle",
+  "target",
+  "__pycache__",
+  ".pytest_cache",
+  ".venv",
+  "venv",
+  ".env",
+  ".idea",
+  ".vscode"
+]);
+var DEFAULT_EXCLUDE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".ico",
+  ".svg",
+  ".pdf",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".rar",
+  ".7z",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".dat",
+  ".db",
+  ".sqlite",
+  ".lock",
+  ".log",
+  ".md"
+]);
+var SECRET_PATTERNS = [
+  {
+    type: "aws_access_key",
+    regex: /(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|aws_access_key_id|aws_secret_access_key)\s*[=:]\s*['"]?([A-Z0-9]{20})['"]?/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "AKIA[REDACTED]"
+  },
+  {
+    type: "aws_secret_key",
+    regex: /(?:AWS_SECRET_ACCESS_KEY|aws_secret_access_key)\s*[=:]\s*['"]?([A-Za-z0-9+/=]{40})['"]?/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "[REDACTED_AWS_SECRET]"
+  },
+  {
+    type: "api_key",
+    regex: /(?:api[_-]?key|apikey|API[_-]?KEY)\s*[=:]\s*['"]?([a-zA-Z0-9_-]{16,64})['"]?/gi,
+    confidence: "medium",
+    severity: "high",
+    redactTemplate: (m) => {
+      const key = m.match(/[a-zA-Z0-9_-]{16,64}/)?.[0] || "";
+      return `api_key=${key.slice(0, 4)}...${key.slice(-4)}`;
+    }
+  },
+  {
+    type: "bearer_token",
+    regex: /(?:bearer\s+|Bearer\s+)([a-zA-Z0-9_\-.]{1,200})[\s"'<]/gi,
+    confidence: "medium",
+    severity: "high",
+    redactTemplate: () => "bearer [REDACTED]"
+  },
+  {
+    type: "basic_auth",
+    regex: /(?:basic\s+|Basic\s+)([a-zA-Z0-9+/=]{1,200})[\s"'<]/gi,
+    confidence: "medium",
+    severity: "high",
+    redactTemplate: () => "basic [REDACTED]"
+  },
+  {
+    type: "database_url",
+    regex: /(?:mysql|postgres|postgresql|mongodb|redis):\/\/[^\s"'/:]+:[^\s"'/:]+@[^\s"']+/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "mysql://[user]:[password]@[host]"
+  },
+  {
+    type: "github_token",
+    regex: /(?:ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36,}/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "ghp_[REDACTED]"
+  },
+  {
+    type: "generic_token",
+    regex: /(?:token|TOKEN)\s*[=:]\s*['"]?([a-zA-Z0-9_\-.]{20,80})['"]?/gi,
+    confidence: "low",
+    severity: "medium",
+    redactTemplate: (m) => {
+      const token = m.match(/[a-zA-Z0-9_\-.]{20,80}/)?.[0] || "";
+      return `token=${token.slice(0, 4)}...`;
+    }
+  },
+  {
+    type: "password",
+    regex: /(?:password|passwd|pwd|PASSWORD|PASSWD)\s*[=:]\s*['"]?([^\s'"]{4,100})['"]?/gi,
+    confidence: "medium",
+    severity: "high",
+    redactTemplate: () => "password=[REDACTED]"
+  },
+  {
+    type: "private_key",
+    regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "-----BEGIN PRIVATE KEY-----"
+  },
+  {
+    type: "jwt",
+    regex: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g,
+    confidence: "high",
+    severity: "high",
+    redactTemplate: (m) => `eyJ...${m.slice(-10)}`
+  },
+  {
+    type: "stripe_key",
+    regex: /(?:sk|pk)_(?:live|test)_[a-zA-Z0-9]{24,}/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "sk_live_[REDACTED]"
+  },
+  {
+    type: "slack_token",
+    regex: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "xoxb-[REDACTED]"
+  },
+  {
+    type: "sendgrid_key",
+    regex: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/g,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "SG.[REDACTED]"
+  },
+  {
+    type: "twilio_key",
+    regex: /SK[a-f0-9]{32}/gi,
+    confidence: "high",
+    severity: "critical",
+    redactTemplate: () => "SK[REDACTED]"
+  }
+];
+function calculateShannonEntropy(str) {
+  if (str.length === 0)
+    return 0;
+  const freq = new Map;
+  for (const char of str) {
+    freq.set(char, (freq.get(char) || 0) + 1);
+  }
+  let entropy = 0;
+  for (const count of freq.values()) {
+    const p = count / str.length;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+function isHighEntropyString(str) {
+  if (str.length < 20)
+    return false;
+  const alphanumeric = str.replace(/[^a-zA-Z0-9]/g, "").length;
+  if (alphanumeric / str.length < 0.25)
+    return false;
+  const entropy = calculateShannonEntropy(str);
+  return entropy > 4;
+}
+function containsPathTraversal2(str) {
+  if (/\.\.[/\\]/.test(str))
+    return true;
+  const normalized = path10.normalize(str);
+  if (/\.\.[/\\]/.test(normalized))
+    return true;
+  if (str.includes("%2e%2e") || str.includes("%2E%2E"))
+    return true;
+  if (str.includes("..") && /%2e/i.test(str))
+    return true;
+  return false;
+}
+function containsControlChars2(str) {
+  return /[\0\r]/.test(str);
+}
+function validateDirectoryInput(dir) {
+  if (!dir || dir.length === 0) {
+    return "directory is required";
+  }
+  if (dir.length > MAX_FILE_PATH_LENGTH2) {
+    return `directory exceeds maximum length of ${MAX_FILE_PATH_LENGTH2}`;
+  }
+  if (containsControlChars2(dir)) {
+    return "directory contains control characters";
+  }
+  if (containsPathTraversal2(dir)) {
+    return "directory contains path traversal";
+  }
+  return null;
+}
+function isBinaryFile2(filePath, buffer) {
+  const ext = path10.extname(filePath).toLowerCase();
+  if (DEFAULT_EXCLUDE_EXTENSIONS.has(ext)) {
+    return true;
+  }
+  if (buffer.length >= BINARY_PREFIX_BYTES2) {
+    const prefix = buffer.subarray(0, BINARY_PREFIX_BYTES2);
+    const uint323 = prefix.readUInt32BE(0);
+    for (const sig of BINARY_SIGNATURES2) {
+      if (uint323 === sig)
+        return true;
+    }
+  }
+  let nullCount = 0;
+  const checkLen = Math.min(buffer.length, BINARY_NULL_CHECK_BYTES2);
+  for (let i = 0;i < checkLen; i++) {
+    if (buffer[i] === 0)
+      nullCount++;
+  }
+  return nullCount > checkLen * BINARY_NULL_THRESHOLD2;
+}
+function scanLineForSecrets(line, lineNum) {
+  const results = [];
+  if (line.length > MAX_LINE_LENGTH) {
+    return results;
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    pattern.regex.lastIndex = 0;
+    let match;
+    while ((match = pattern.regex.exec(line)) !== null) {
+      const fullMatch = match[0];
+      const redacted = pattern.redactTemplate(fullMatch);
+      results.push({
+        type: pattern.type,
+        confidence: pattern.confidence,
+        severity: pattern.severity,
+        redacted,
+        matchStart: match.index,
+        matchEnd: match.index + fullMatch.length
+      });
+      if (match.index === pattern.regex.lastIndex) {
+        pattern.regex.lastIndex++;
+      }
+    }
+  }
+  const valueMatch = line.match(/(?:secret|key|token|password|cred|credential)\s*[=:]\s*["']?([a-zA-Z0-9+/=_-]{20,100})["']?/i);
+  if (valueMatch && isHighEntropyString(valueMatch[1])) {
+    const matchStart = valueMatch.index || 0;
+    const matchEnd = matchStart + valueMatch[0].length;
+    const hasOverlap = results.some((r) => !(r.matchEnd <= matchStart || r.matchStart >= matchEnd));
+    if (!hasOverlap) {
+      results.push({
+        type: "high_entropy",
+        confidence: "low",
+        severity: "medium",
+        redacted: `${valueMatch[0].split("=")[0].trim()}=[HIGH_ENTROPY]`,
+        matchStart,
+        matchEnd
+      });
+    }
+  }
+  return results;
+}
+function createRedactedContext(line, findings) {
+  if (findings.length === 0)
+    return line;
+  const sorted = [...findings].sort((a, b) => a.matchStart - b.matchStart);
+  let result = "";
+  let lastEnd = 0;
+  for (const finding of sorted) {
+    result += line.slice(lastEnd, finding.matchStart);
+    result += finding.redacted;
+    lastEnd = finding.matchEnd;
+  }
+  result += line.slice(lastEnd);
+  return result;
+}
+var O_NOFOLLOW = process.platform !== "win32" ? fs6.constants.O_NOFOLLOW : undefined;
+function scanFileForSecrets(filePath) {
+  const findings = [];
+  try {
+    const lstat = fs6.lstatSync(filePath);
+    if (lstat.isSymbolicLink()) {
+      return findings;
+    }
+    if (lstat.size > MAX_FILE_SIZE_BYTES2) {
+      return findings;
+    }
+    let buffer;
+    if (O_NOFOLLOW !== undefined) {
+      const fd = fs6.openSync(filePath, "r", O_NOFOLLOW);
+      try {
+        buffer = fs6.readFileSync(fd);
+      } finally {
+        fs6.closeSync(fd);
+      }
+    } else {
+      buffer = fs6.readFileSync(filePath);
+    }
+    if (isBinaryFile2(filePath, buffer)) {
+      return findings;
+    }
+    let content;
+    if (buffer.length >= 3 && buffer[0] === 239 && buffer[1] === 187 && buffer[2] === 191) {
+      content = buffer.slice(3).toString("utf-8");
+    } else {
+      content = buffer.toString("utf-8");
+    }
+    if (content.includes("\x00")) {
+      return findings;
+    }
+    const scanContent = content.slice(0, MAX_CONTENT_BYTES);
+    const lines = scanContent.split(`
+`);
+    for (let i = 0;i < lines.length; i++) {
+      const lineResults = scanLineForSecrets(lines[i], i + 1);
+      for (const result of lineResults) {
+        findings.push({
+          path: filePath,
+          line: i + 1,
+          type: result.type,
+          confidence: result.confidence,
+          severity: result.severity,
+          redacted: result.redacted,
+          context: createRedactedContext(lines[i], [result])
+        });
+      }
+    }
+  } catch {}
+  return findings;
+}
+function isSymlinkLoop(realPath, visited) {
+  if (visited.has(realPath)) {
+    return true;
+  }
+  visited.add(realPath);
+  return false;
+}
+function isPathWithinScope(realPath, scanDir) {
+  const resolvedScanDir = path10.resolve(scanDir);
+  const resolvedRealPath = path10.resolve(realPath);
+  return resolvedRealPath === resolvedScanDir || resolvedRealPath.startsWith(resolvedScanDir + path10.sep) || resolvedRealPath.startsWith(resolvedScanDir + "/") || resolvedRealPath.startsWith(resolvedScanDir + "\\");
+}
+function findScannableFiles(dir, excludeDirs, scanDir, visited, stats = {
+  skippedDirs: 0,
+  skippedFiles: 0,
+  fileErrors: 0,
+  symlinkSkipped: 0
+}) {
+  const files = [];
+  let entries;
+  try {
+    entries = fs6.readdirSync(dir);
+  } catch {
+    stats.fileErrors++;
+    return files;
+  }
+  entries.sort((a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    if (aLower < bLower)
+      return -1;
+    if (aLower > bLower)
+      return 1;
+    return a.localeCompare(b);
+  });
+  for (const entry of entries) {
+    if (excludeDirs.has(entry)) {
+      stats.skippedDirs++;
+      continue;
+    }
+    const fullPath = path10.join(dir, entry);
+    let lstat;
+    try {
+      lstat = fs6.lstatSync(fullPath);
+    } catch {
+      stats.fileErrors++;
+      continue;
+    }
+    if (lstat.isSymbolicLink()) {
+      stats.symlinkSkipped++;
+      continue;
+    }
+    if (lstat.isDirectory()) {
+      let realPath;
+      try {
+        realPath = fs6.realpathSync(fullPath);
+      } catch {
+        stats.fileErrors++;
+        continue;
+      }
+      if (isSymlinkLoop(realPath, visited)) {
+        stats.symlinkSkipped++;
+        continue;
+      }
+      if (!isPathWithinScope(realPath, scanDir)) {
+        stats.symlinkSkipped++;
+        continue;
+      }
+      const subFiles = findScannableFiles(fullPath, excludeDirs, scanDir, visited, stats);
+      files.push(...subFiles);
+    } else if (lstat.isFile()) {
+      const ext = path10.extname(fullPath).toLowerCase();
+      if (!DEFAULT_EXCLUDE_EXTENSIONS.has(ext)) {
+        files.push(fullPath);
+      } else {
+        stats.skippedFiles++;
+      }
+    }
+  }
+  return files;
+}
+var secretscan = tool({
+  description: "Scan directory for potential secrets (API keys, tokens, passwords) using regex patterns and entropy heuristics. Returns metadata-only findings with redacted previews - NEVER returns raw secrets. Excludes common directories (node_modules, .git, dist, etc.) by default.",
+  args: {
+    directory: tool.schema.string().describe('Directory to scan for secrets (e.g., "." or "./src")'),
+    exclude: tool.schema.array(tool.schema.string()).optional().describe("Additional directories to exclude (added to default exclusions like node_modules, .git, dist)")
+  },
+  async execute(args, _context) {
+    let directory;
+    let exclude;
+    try {
+      if (args && typeof args === "object") {
+        directory = args.directory;
+        exclude = args.exclude;
+      }
+    } catch {}
+    if (directory === undefined) {
+      const errorResult = {
+        error: "invalid arguments: directory is required",
+        scan_dir: "",
+        findings: [],
+        count: 0,
+        files_scanned: 0,
+        skipped_files: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    const dirValidationError = validateDirectoryInput(directory);
+    if (dirValidationError) {
+      const errorResult = {
+        error: `invalid directory: ${dirValidationError}`,
+        scan_dir: directory,
+        findings: [],
+        count: 0,
+        files_scanned: 0,
+        skipped_files: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
+    if (exclude) {
+      for (const exc of exclude) {
+        if (exc.length > MAX_FILE_PATH_LENGTH2) {
+          const errorResult = {
+            error: `invalid exclude path: exceeds maximum length of ${MAX_FILE_PATH_LENGTH2}`,
+            scan_dir: directory,
+            findings: [],
+            count: 0,
+            files_scanned: 0,
+            skipped_files: 0
+          };
+          return JSON.stringify(errorResult, null, 2);
+        }
+        if (containsPathTraversal2(exc) || containsControlChars2(exc)) {
+          const errorResult = {
+            error: `invalid exclude path: contains path traversal or control characters`,
+            scan_dir: directory,
+            findings: [],
+            count: 0,
+            files_scanned: 0,
+            skipped_files: 0
+          };
+          return JSON.stringify(errorResult, null, 2);
+        }
+      }
+    }
+    try {
+      const scanDir = path10.resolve(directory);
+      if (!fs6.existsSync(scanDir)) {
+        const errorResult = {
+          error: "directory not found",
+          scan_dir: directory,
+          findings: [],
+          count: 0,
+          files_scanned: 0,
+          skipped_files: 0
+        };
+        return JSON.stringify(errorResult, null, 2);
+      }
+      const dirStat = fs6.statSync(scanDir);
+      if (!dirStat.isDirectory()) {
+        const errorResult = {
+          error: "target must be a directory, not a file",
+          scan_dir: directory,
+          findings: [],
+          count: 0,
+          files_scanned: 0,
+          skipped_files: 0
+        };
+        return JSON.stringify(errorResult, null, 2);
+      }
+      const excludeDirs = new Set(DEFAULT_EXCLUDE_DIRS);
+      if (exclude) {
+        for (const exc of exclude) {
+          excludeDirs.add(exc);
+        }
+      }
+      const stats = {
+        skippedDirs: 0,
+        skippedFiles: 0,
+        fileErrors: 0,
+        symlinkSkipped: 0
+      };
+      const visited = new Set;
+      const files = findScannableFiles(scanDir, excludeDirs, scanDir, visited, stats);
+      files.sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        if (aLower < bLower)
+          return -1;
+        if (aLower > bLower)
+          return 1;
+        return a.localeCompare(b);
+      });
+      const filesToScan = files.slice(0, MAX_FILES_SCANNED);
+      const allFindings = [];
+      let filesScanned = 0;
+      let skippedFiles = stats.skippedFiles;
+      for (const filePath of filesToScan) {
+        if (allFindings.length >= MAX_FINDINGS)
+          break;
+        const fileFindings = scanFileForSecrets(filePath);
+        try {
+          const stat = fs6.statSync(filePath);
+          if (stat.size > MAX_FILE_SIZE_BYTES2) {
+            skippedFiles++;
+            continue;
+          }
+        } catch {}
+        filesScanned++;
+        for (const finding of fileFindings) {
+          if (allFindings.length >= MAX_FINDINGS)
+            break;
+          allFindings.push(finding);
+        }
+      }
+      allFindings.sort((a, b) => {
+        const aPathLower = a.path.toLowerCase();
+        const bPathLower = b.path.toLowerCase();
+        if (aPathLower < bPathLower)
+          return -1;
+        if (aPathLower > bPathLower)
+          return 1;
+        if (a.path < b.path)
+          return -1;
+        if (a.path > b.path)
+          return 1;
+        return a.line - b.line;
+      });
+      const result = {
+        scan_dir: directory,
+        findings: allFindings,
+        count: allFindings.length,
+        files_scanned: filesScanned,
+        skipped_files: skippedFiles + stats.fileErrors + stats.symlinkSkipped
+      };
+      const parts = [];
+      if (files.length > MAX_FILES_SCANNED) {
+        parts.push(`Found ${files.length} files, scanned ${MAX_FILES_SCANNED}`);
+      }
+      if (allFindings.length >= MAX_FINDINGS) {
+        parts.push(`Results limited to ${MAX_FINDINGS} findings`);
+      }
+      if (skippedFiles > 0 || stats.fileErrors > 0 || stats.symlinkSkipped > 0) {
+        parts.push(`${skippedFiles + stats.fileErrors + stats.symlinkSkipped} files skipped (binary/oversized/symlinks/errors)`);
+      }
+      if (parts.length > 0) {
+        result.message = parts.join("; ") + ".";
+      }
+      let jsonOutput = JSON.stringify(result, null, 2);
+      if (jsonOutput.length > MAX_OUTPUT_BYTES2) {
+        const truncatedResult = {
+          ...result,
+          findings: result.findings.slice(0, Math.floor(MAX_OUTPUT_BYTES2 * 0.8 / 200)),
+          message: "Output truncated due to size limits."
+        };
+        jsonOutput = JSON.stringify(truncatedResult, null, 2);
+      }
+      return jsonOutput;
+    } catch (e) {
+      const errorResult = {
+        error: e instanceof Error ? `scan failed: ${e.message || "internal error"}` : "scan failed: unknown error",
+        scan_dir: directory,
+        findings: [],
+        count: 0,
+        files_scanned: 0,
+        skipped_files: 0
+      };
+      return JSON.stringify(errorResult, null, 2);
+    }
   }
 });
 // src/index.ts
@@ -31012,8 +32242,11 @@ var OpenCodeSwarm = async (ctx) => {
       detect_domains,
       extract_code_blocks,
       gitingest,
+      imports,
+      lint,
       diff,
-      retrieve_summary
+      retrieve_summary,
+      secretscan
     },
     config: async (opencodeConfig) => {
       if (!opencodeConfig.agent) {

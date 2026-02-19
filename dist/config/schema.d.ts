@@ -154,6 +154,28 @@ export declare const CompactionAdvisoryConfigSchema: z.ZodObject<{
     message: z.ZodDefault<z.ZodString>;
 }, z.core.$strip>;
 export type CompactionAdvisoryConfig = z.infer<typeof CompactionAdvisoryConfigSchema>;
+export declare const LintConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    mode: z.ZodDefault<z.ZodEnum<{
+        check: "check";
+        fix: "fix";
+    }>>;
+    linter: z.ZodDefault<z.ZodEnum<{
+        biome: "biome";
+        eslint: "eslint";
+        auto: "auto";
+    }>>;
+    patterns: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    exclude: z.ZodDefault<z.ZodArray<z.ZodString>>;
+}, z.core.$strip>;
+export type LintConfig = z.infer<typeof LintConfigSchema>;
+export declare const SecretscanConfigSchema: z.ZodObject<{
+    enabled: z.ZodDefault<z.ZodBoolean>;
+    patterns: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    exclude: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    extensions: z.ZodDefault<z.ZodArray<z.ZodString>>;
+}, z.core.$strip>;
+export type SecretscanConfig = z.infer<typeof SecretscanConfigSchema>;
 export declare const GuardrailsProfileSchema: z.ZodObject<{
     max_tool_calls: z.ZodOptional<z.ZodNumber>;
     max_duration_minutes: z.ZodOptional<z.ZodNumber>;
@@ -328,6 +350,26 @@ export declare const PluginConfigSchema: z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;
         thresholds: z.ZodDefault<z.ZodArray<z.ZodNumber>>;
         message: z.ZodDefault<z.ZodString>;
+    }, z.core.$strip>>;
+    lint: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        mode: z.ZodDefault<z.ZodEnum<{
+            check: "check";
+            fix: "fix";
+        }>>;
+        linter: z.ZodDefault<z.ZodEnum<{
+            biome: "biome";
+            eslint: "eslint";
+            auto: "auto";
+        }>>;
+        patterns: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        exclude: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>;
+    secretscan: z.ZodOptional<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        patterns: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        exclude: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        extensions: z.ZodDefault<z.ZodArray<z.ZodString>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

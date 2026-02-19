@@ -27,7 +27,10 @@ import {
 	diff,
 	extract_code_blocks,
 	gitingest,
+	imports,
+	lint,
 	retrieve_summary,
+	secretscan,
 } from './tools';
 import { log } from './utils';
 
@@ -106,8 +109,11 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			detect_domains,
 			extract_code_blocks,
 			gitingest,
+			imports,
+			lint,
 			diff,
 			retrieve_summary,
+			secretscan,
 		},
 
 		// Configure OpenCode - merge agents into config

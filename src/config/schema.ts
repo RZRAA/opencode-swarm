@@ -207,6 +207,80 @@ export type CompactionAdvisoryConfig = z.infer<
 	typeof CompactionAdvisoryConfigSchema
 >;
 
+// Lint configuration
+export const LintConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	mode: z.enum(['check', 'fix']).default('check'),
+	linter: z.enum(['biome', 'eslint', 'auto']).default('auto'),
+	patterns: z
+		.array(z.string())
+		.default([
+			'**/*.{ts,tsx,js,jsx,mjs,cjs}',
+			'**/biome.json',
+			'**/biome.jsonc',
+		]),
+	exclude: z
+		.array(z.string())
+		.default([
+			'**/node_modules/**',
+			'**/dist/**',
+			'**/.git/**',
+			'**/coverage/**',
+			'**/*.min.js',
+		]),
+});
+
+export type LintConfig = z.infer<typeof LintConfigSchema>;
+
+// Secretscan configuration
+export const SecretscanConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	patterns: z
+		.array(z.string())
+		.default([
+			'**/*.{env,properties,yml,yaml,json,js,ts}',
+			'**/.env*',
+			'**/secrets/**',
+			'**/credentials/**',
+			'**/config/**/*.ts',
+			'**/config/**/*.js',
+		]),
+	exclude: z
+		.array(z.string())
+		.default([
+			'**/node_modules/**',
+			'**/dist/**',
+			'**/.git/**',
+			'**/coverage/**',
+			'**/test/**',
+			'**/tests/**',
+			'**/__tests__/**',
+			'**/*.test.ts',
+			'**/*.test.js',
+			'**/*.spec.ts',
+			'**/*.spec.js',
+		]),
+	extensions: z
+		.array(z.string())
+		.default([
+			'.env',
+			'.properties',
+			'.yml',
+			'.yaml',
+			'.json',
+			'.js',
+			'.ts',
+			'.py',
+			'.rb',
+			'.go',
+			'.java',
+			'.cs',
+			'.php',
+		]),
+});
+
+export type SecretscanConfig = z.infer<typeof SecretscanConfigSchema>;
+
 // Guardrails profile (per-agent overrides - all fields optional)
 export const GuardrailsProfileSchema = z.object({
 	max_tool_calls: z.number().min(0).max(1000).optional(),
@@ -416,6 +490,12 @@ export const PluginConfigSchema = z.object({
 
 	// Compaction advisory configuration
 	compaction_advisory: CompactionAdvisoryConfigSchema.optional(),
+
+	// Lint configuration
+	lint: LintConfigSchema.optional(),
+
+	// Secretscan configuration
+	secretscan: SecretscanConfigSchema.optional(),
 });
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

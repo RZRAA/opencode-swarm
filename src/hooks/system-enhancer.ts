@@ -183,6 +183,20 @@ export function createSystemEnhancerHook(
 							);
 						}
 
+						// v6.2: Lint gate opt-out
+						if (config.lint?.enabled === false) {
+							tryInject(
+								'[SWARM CONFIG] Lint gate is DISABLED. Skip lint check/fix in QA sequence.',
+							);
+						}
+
+						// v6.2: Secretscan gate opt-out
+						if (config.secretscan?.enabled === false) {
+							tryInject(
+								'[SWARM CONFIG] Secretscan gate is DISABLED. Skip secretscan in QA sequence.',
+							);
+						}
+
 						// v6.2: Retrospective injection — architect-only, most recent retro
 						const sessionId_retro = _input.sessionID;
 						const activeAgent_retro = swarmState.activeAgent.get(
@@ -423,6 +437,34 @@ export function createSystemEnhancerHook(
 					if (config.docs?.enabled === false) {
 						const text =
 							'[SWARM CONFIG] Docs agent is DISABLED. Skip docs delegation in Phase 6.';
+						candidates.push({
+							id: `candidate-${idCounter++}`,
+							kind: 'phase' as ContextCandidate['kind'],
+							text,
+							tokens: estimateTokens(text),
+							priority: 1,
+							metadata: { contentType: 'prose' as ContentType },
+						});
+					}
+
+					// v6.2: Lint gate opt-out
+					if (config.lint?.enabled === false) {
+						const text =
+							'[SWARM CONFIG] Lint gate is DISABLED. Skip lint check/fix in QA sequence.';
+						candidates.push({
+							id: `candidate-${idCounter++}`,
+							kind: 'phase' as ContextCandidate['kind'],
+							text,
+							tokens: estimateTokens(text),
+							priority: 1,
+							metadata: { contentType: 'prose' as ContentType },
+						});
+					}
+
+					// v6.2: Secretscan gate opt-out
+					if (config.secretscan?.enabled === false) {
+						const text =
+							'[SWARM CONFIG] Secretscan gate is DISABLED. Skip secretscan in QA sequence.';
 						candidates.push({
 							id: `candidate-${idCounter++}`,
 							kind: 'phase' as ContextCandidate['kind'],

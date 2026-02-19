@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-6.2.0-blue" alt="Version">
+   <img src="https://img.shields.io/badge/version-6.3.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
@@ -423,7 +423,7 @@ The installer auto-configures `opencode.json` to include the plugin. Manual conf
 
 ## Testing
 
-1391 tests across 62 files. Unit, integration, adversarial, and smoke. Covers config schemas, all agent prompts, all hooks, all tools, all commands, guardrail circuit breaker, race conditions, invocation window isolation, multi-invocation state, security category classification, and evidence validation.
+2031 tests across 78 files. Unit, integration, adversarial, and smoke. Covers config schemas, all agent prompts, all hooks, all tools, all commands, guardrail circuit breaker, race conditions, invocation window isolation, multi-invocation state, security category classification, and evidence validation.
 
 ```bash
 bun test
