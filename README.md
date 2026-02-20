@@ -1,5 +1,5 @@
 <p align="center">
-   <img src="https://img.shields.io/badge/version-6.3.0-blue" alt="Version">
+   <img src="https://img.shields.io/badge/version-6.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
@@ -483,6 +483,8 @@ Five tools that improve planning quality and post-phase validation:
 - [Architecture Deep Dive](docs/architecture.md)
 - [Design Rationale](docs/design-rationale.md)
 - [Installation Guide](docs/installation.md)
+- [Linux + Docker Desktop Install Guide](docs/installation-linux-docker.md)
+- [LLM Operator Install Guide](docs/installation-llm-operator.md)
 
 ---
 
