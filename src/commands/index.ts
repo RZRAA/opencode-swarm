@@ -6,13 +6,16 @@ import { handleArchiveCommand } from './archive';
 import { handleBenchmarkCommand } from './benchmark';
 import { handleConfigCommand } from './config';
 import { handleDiagnoseCommand } from './diagnose';
+import { handleDoctorCommand } from './doctor';
 import { handleEvidenceCommand } from './evidence';
 import { handleExportCommand } from './export';
 import { handleHistoryCommand } from './history';
 import { handlePlanCommand } from './plan';
+import { handlePreflightCommand } from './preflight';
 import { handleResetCommand } from './reset';
 import { handleRetrieveCommand } from './retrieve';
 import { handleStatusCommand } from './status';
+import { handleSyncPlanCommand } from './sync-plan';
 
 // Re-export individual handlers
 export { handleAgentsCommand } from './agents';
@@ -20,13 +23,16 @@ export { handleArchiveCommand } from './archive';
 export { handleBenchmarkCommand } from './benchmark';
 export { handleConfigCommand } from './config';
 export { handleDiagnoseCommand } from './diagnose';
+export { handleDoctorCommand } from './doctor';
 export { handleEvidenceCommand } from './evidence';
 export { handleExportCommand } from './export';
 export { handleHistoryCommand } from './history';
 export { handlePlanCommand } from './plan';
+export { handlePreflightCommand } from './preflight';
 export { handleResetCommand } from './reset';
 export { handleRetrieveCommand } from './retrieve';
 export { handleStatusCommand } from './status';
+export { handleSyncPlanCommand } from './sync-plan';
 
 const HELP_TEXT = [
 	'## Swarm Commands',
@@ -36,9 +42,12 @@ const HELP_TEXT = [
 	'- `/swarm agents` — List registered agents',
 	'- `/swarm history` — Show completed phases summary',
 	'- `/swarm config` — Show current resolved configuration',
+	'- `/swarm config doctor` — Run config doctor checks',
 	'- `/swarm evidence [taskId]` — Show evidence bundles',
 	'- `/swarm archive [--dry-run]` — Archive old evidence bundles',
 	'- `/swarm diagnose` — Run health check on swarm state',
+	'- `/swarm preflight` — Run preflight automation checks',
+	'- `/swarm sync-plan` — Ensure plan.json and plan.md are synced',
 	'- `/swarm benchmark [--cumulative] [--ci-gate]` — Show performance metrics',
 	'- `/swarm export` — Export plan and context as JSON',
 	'- `/swarm reset --confirm` — Clear swarm state files',
@@ -91,13 +100,28 @@ export function createSwarmCommandHandler(
 				text = await handleHistoryCommand(directory, args);
 				break;
 			case 'config':
-				text = await handleConfigCommand(directory, args);
+				if (args[0] === 'doctor') {
+					// Handle /swarm config doctor
+					text = await handleDoctorCommand(directory, args.slice(1));
+				} else {
+					text = await handleConfigCommand(directory, args);
+				}
+				break;
+			case 'doctor':
+				// Also support /swarm doctor as shortcut
+				text = await handleDoctorCommand(directory, args);
 				break;
 			case 'evidence':
 				text = await handleEvidenceCommand(directory, args);
 				break;
 			case 'diagnose':
 				text = await handleDiagnoseCommand(directory, args);
+				break;
+			case 'preflight':
+				text = await handlePreflightCommand(directory, args);
+				break;
+			case 'sync-plan':
+				text = await handleSyncPlanCommand(directory, args);
 				break;
 			case 'benchmark':
 				text = await handleBenchmarkCommand(directory, args);

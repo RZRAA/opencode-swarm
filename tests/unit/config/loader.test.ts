@@ -477,6 +477,103 @@ describe('config/loader', () => {
 
 			fs.rmSync(projectDir, { recursive: true, force: true });
 		});
+
+		// Security fix: fail-secure fallback tests
+		describe('fail-secure fallback behavior', () => {
+			it('should enable guardrails when merged config validation fails', () => {
+				// Create user config with invalid schema
+				const userConfigDir = path.join(tempDir, 'opencode');
+				const userConfigFile = path.join(userConfigDir, 'opencode-swarm.json');
+				fs.mkdirSync(userConfigDir, { recursive: true });
+				// max_iterations: 999 exceeds schema max of 10
+				fs.writeFileSync(userConfigFile, JSON.stringify({ max_iterations: 999 }));
+
+				// Create project config that also has invalid values (to trigger merge failure)
+				const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+				const configDir = path.join(projectDir, '.opencode');
+				const configFile = path.join(configDir, 'opencode-swarm.json');
+				fs.mkdirSync(configDir, { recursive: true });
+				fs.writeFileSync(configFile, JSON.stringify({ max_iterations: 888 }));
+
+				const result = loadPluginConfig(projectDir);
+
+				// Fail-secure: should return defaults with guardrails ENABLED
+				expect(result.guardrails?.enabled).toBe(true); // Default is true
+				expect(result.max_iterations).toBe(5); // Default value
+
+				fs.rmSync(projectDir, { recursive: true, force: true });
+			});
+
+			it('should enable guardrails when config file is too large', () => {
+				const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+				const configDir = path.join(projectDir, '.opencode');
+				const configFile = path.join(configDir, 'opencode-swarm.json');
+				fs.mkdirSync(configDir, { recursive: true });
+				// Write a file larger than 100KB
+				const largeContent = JSON.stringify({ guardrails: { enabled: false }, max_iterations: 3 }) + ' '.repeat(110_000);
+				fs.writeFileSync(configFile, largeContent);
+
+				const result = loadPluginConfig(projectDir);
+
+				// Fail-secure: guardrails should be enabled despite oversized file
+				expect(result.guardrails?.enabled).toBe(true); // Default is true
+				expect(result.max_iterations).toBe(5); // Default value
+
+				fs.rmSync(projectDir, { recursive: true, force: true });
+			});
+
+			it('should enable guardrails when config file contains non-object root', () => {
+				const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+				const configDir = path.join(projectDir, '.opencode');
+				const configFile = path.join(configDir, 'opencode-swarm.json');
+				fs.mkdirSync(configDir, { recursive: true });
+				// Write an array instead of an object
+				fs.writeFileSync(configFile, JSON.stringify([1, 2, 3]));
+
+				const result = loadPluginConfig(projectDir);
+
+				// Fail-secure: guardrails should be enabled
+				expect(result.guardrails?.enabled).toBe(true); // Default is true
+
+				fs.rmSync(projectDir, { recursive: true, force: true });
+			});
+
+			it('should enable guardrails when config file is invalid JSON', () => {
+				const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+				const configDir = path.join(projectDir, '.opencode');
+				const configFile = path.join(configDir, 'opencode-swarm.json');
+				fs.mkdirSync(configDir, { recursive: true });
+				// Write invalid JSON
+				fs.writeFileSync(configFile, '{ invalid json }');
+
+				const result = loadPluginConfig(projectDir);
+
+				// Fail-secure: guardrails should be enabled
+				expect(result.guardrails?.enabled).toBe(true); // Default is true
+
+				fs.rmSync(projectDir, { recursive: true, force: true });
+			});
+
+			it('should still honor explicit guardrails.enabled: false from valid config', () => {
+				// This test ensures backward compatibility - explicit user config should still work
+				const userConfigDir = path.join(tempDir, 'opencode');
+				const userConfigFile = path.join(userConfigDir, 'opencode-swarm.json');
+				fs.mkdirSync(userConfigDir, { recursive: true });
+				// Explicitly disable guardrails in valid config
+				fs.writeFileSync(userConfigFile, JSON.stringify({
+					guardrails: { enabled: false }
+				}));
+
+				const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-test-'));
+				
+				const result = loadPluginConfig(projectDir);
+
+				// Valid config with explicit false should still be honored
+				expect(result.guardrails?.enabled).toBe(false);
+
+				fs.rmSync(projectDir, { recursive: true, force: true });
+			});
+		});
 	});
 
 	describe('loadAgentPrompt', () => {

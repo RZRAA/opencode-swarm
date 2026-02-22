@@ -658,6 +658,127 @@ When contract changes are detected, the explorer analyzes:
 
 ---
 
+## Automation Configuration (v6.7)
+
+Control background-first automation and feature flags:
+
+```jsonc
+{
+  "automation": {
+    "mode": "manual",
+    "capabilities": {
+      "plan_sync": false,
+      "phase_preflight": false,
+      "config_doctor_on_startup": false,
+      "config_doctor_autofix": false,
+      "evidence_auto_summaries": false,
+      "decision_drift_detection": false
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mode` | string | `"manual"` | Automation mode: `"manual"` (no background automation), `"hybrid"` (safe ops only), `"auto"` (full automation). **Default: `manual`** for backward compatibility. |
+| `plan_sync` | boolean | `false` | Enable automatic plan synchronization. When enabled, Swarm regenerates plan.md from canonical plan.json when they're out of sync. Safe - read-only operation. |
+| `phase_preflight` | boolean | `false` | Enable phase-boundary preflight checks before agent execution. Validates plan completeness, evidence requirements, and blockers. Returns actionable findings. |
+| `config_doctor_on_startup` | boolean | `false` | Run Config Doctor on plugin initialization to validate and fix configuration. Defaults to scan-only mode. Requires explicit opt-in via `config_doctor_autofix`. |
+| `config_doctor_autofix` | boolean | `false` | Enable auto-fix mode for Config Doctor. **Security: Defaults to false** - autofix requires explicit opt-in. Creates backups in `.swarm/` before applying fixes. |
+| `evidence_auto_summaries` | boolean | `false` | Generate automatic evidence summaries. Aggregates evidence per task and phase, producing machine-readable JSON and human-readable markdown. |
+| `decision_drift_detection` | boolean | `false` | Detect drift between planned and actual decisions. Caches decisions from `## Decisions` section in context.md, identifies stale decisions and contradictions. |
+
+### How Automation Modes Work
+
+#### Manual (Default)
+
+No background automation. All actions require explicit slash commands:
+- `/swarm preflight` - Run preflight checks manually
+- `/swarm config doctor` - Validate config manually
+- `/swarm sync-plan` - Sync plan.md from plan.json manually
+
+Use this mode when you want full control over background operations.
+
+#### Hybrid
+
+Background automation for safe operations:
+- Config Doctor runs on startup with auto-fix (if enabled)
+- Evidence summaries generated automatically
+- Plan sync happens in background
+
+Manual triggers for sensitive operations:
+- Preflight checks run via slash command
+- Any manual overrides via `/swarm` commands
+
+Use this mode when you want some automation but want to approve sensitive operations.
+
+#### Auto
+
+Full background automation (target state):
+- All automation features run automatically
+- Preflight checks on phase boundaries
+- Config Doctor on startup
+- Evidence summaries generated automatically
+- Plan sync in background
+
+Use this mode when you've tested automation and want maximum productivity.
+
+### Feature Flag Safety
+
+**Every automation feature has a default-off feature flag:**
+- Start with `mode: "manual"` and all capabilities `false`
+- Enable features as you test them
+- Never enable everything at once
+- Revert to manual mode if something goes wrong
+
+**Config Doctor security:**
+- Defaults to scan-only mode (`autoFix: false`)
+- Only runs auto-fix when explicitly enabled via `config_doctor_autofix: true`
+- Creates encrypted backups in `.swarm/` before applying fixes
+- Supports restore via `/swarm config doctor --restore <backup-id>`
+
+### GUI Visibility
+
+When automation is enabled, Swarm writes status to `.swarm/automation-status.json`:
+
+```json
+{
+  "timestamp": 1234567890,
+  "mode": "manual",
+  "enabled": false,
+  "currentPhase": 2,
+  "lastTrigger": null,
+  "pendingActions": 0,
+  "lastOutcome": null,
+  "capabilities": {
+    "plan_sync": false,
+    "phase_preflight": false,
+    "config_doctor_on_startup": false,
+    "config_doctor_autofix": false,
+    "evidence_auto_summaries": false,
+    "decision_drift_detection": false
+  }
+}
+```
+
+GUI can read this file to show automation status, current phase, and pending actions.
+
+### Slash Commands for Automation
+
+| Command | Function | Use Case |
+|---------|----------|----------|
+| `/swarm preflight` | Run preflight checks on current plan | Validate before starting phase |
+| `/swarm config doctor [--fix] [--restore <id>]` | Config Doctor with optional auto-fix and restore | Fix configuration issues |
+| `/swarm sync-plan` | Force plan.md regeneration from plan.json | Sync plan files |
+
+All automation commands:
+- Non-blocking (fire and forget for background operations)
+- Async execution (don't block OpenCode UI)
+- Log results to console
+- Store artifacts in `.swarm/`
+
+---
+
 ## Slash Commands
 
 Twelve commands are available under `/swarm`:

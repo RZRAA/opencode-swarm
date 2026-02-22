@@ -245,6 +245,38 @@ export declare const CheckpointConfigSchema: z.ZodObject<{
     auto_checkpoint_threshold: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export type CheckpointConfig = z.infer<typeof CheckpointConfigSchema>;
+export declare const AutomationModeSchema: z.ZodEnum<{
+    auto: "auto";
+    manual: "manual";
+    hybrid: "hybrid";
+}>;
+export type AutomationMode = z.infer<typeof AutomationModeSchema>;
+export declare const AutomationCapabilitiesSchema: z.ZodObject<{
+    plan_sync: z.ZodDefault<z.ZodBoolean>;
+    phase_preflight: z.ZodDefault<z.ZodBoolean>;
+    config_doctor_on_startup: z.ZodDefault<z.ZodBoolean>;
+    config_doctor_autofix: z.ZodDefault<z.ZodBoolean>;
+    evidence_auto_summaries: z.ZodDefault<z.ZodBoolean>;
+    decision_drift_detection: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>;
+export type AutomationCapabilities = z.infer<typeof AutomationCapabilitiesSchema>;
+declare const AutomationConfigSchemaBase: z.ZodObject<{
+    mode: z.ZodDefault<z.ZodEnum<{
+        auto: "auto";
+        manual: "manual";
+        hybrid: "hybrid";
+    }>>;
+    capabilities: z.ZodDefault<z.ZodObject<{
+        plan_sync: z.ZodDefault<z.ZodBoolean>;
+        phase_preflight: z.ZodDefault<z.ZodBoolean>;
+        config_doctor_on_startup: z.ZodDefault<z.ZodBoolean>;
+        config_doctor_autofix: z.ZodDefault<z.ZodBoolean>;
+        evidence_auto_summaries: z.ZodDefault<z.ZodBoolean>;
+        decision_drift_detection: z.ZodDefault<z.ZodBoolean>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type AutomationConfig = z.infer<typeof AutomationConfigSchemaBase>;
+export declare const AutomationConfigSchema: z.ZodType<AutomationConfig>;
 export declare const PluginConfigSchema: z.ZodObject<{
     agents: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
         model: z.ZodOptional<z.ZodString>;
@@ -380,6 +412,27 @@ export declare const PluginConfigSchema: z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;
         auto_checkpoint_threshold: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
+    automation: z.ZodOptional<z.ZodType<{
+        mode: "auto" | "manual" | "hybrid";
+        capabilities: {
+            plan_sync: boolean;
+            phase_preflight: boolean;
+            config_doctor_on_startup: boolean;
+            config_doctor_autofix: boolean;
+            evidence_auto_summaries: boolean;
+            decision_drift_detection: boolean;
+        };
+    }, unknown, z.core.$ZodTypeInternals<{
+        mode: "auto" | "manual" | "hybrid";
+        capabilities: {
+            plan_sync: boolean;
+            phase_preflight: boolean;
+            config_doctor_on_startup: boolean;
+            config_doctor_autofix: boolean;
+            evidence_auto_summaries: boolean;
+            decision_drift_detection: boolean;
+        };
+    }, unknown>>>;
 }, z.core.$strip>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;
 export type { AgentName, PipelineAgentName, QAAgentName, } from './constants';

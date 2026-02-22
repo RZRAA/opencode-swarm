@@ -65,11 +65,17 @@ export {
 } from './plan-schema';
 export type {
 	AgentOverrideConfig,
+	AutomationCapabilities,
+	AutomationConfig,
+	AutomationMode,
 	PluginConfig,
 	SwarmConfig,
 } from './schema';
 export {
 	AgentOverrideConfigSchema,
+	AutomationCapabilitiesSchema,
+	AutomationConfigSchema,
+	AutomationModeSchema,
 	PluginConfigSchema,
 	SwarmConfigSchema,
 } from './schema';

@@ -65,7 +65,7 @@ SECURITY_KEYWORDS: password, secret, token, credential, auth, login, encryption,
 
 SMEs advise only. Reviewer and critic review only. None of them write code.
 
-Available Tools: symbols (code symbol search), checkpoint (state snapshots), diff (structured git diff with contract change detection), imports (dependency audit), lint (code quality), secretscan (secret detection)
+Available Tools: symbols (code symbol search), checkpoint (state snapshots), diff (structured git diff with contract change detection), imports (dependency audit), lint (code quality), secretscan (secret detection), test_runner (auto-detect and run tests), pkg_audit (dependency vulnerability scan — npm/pip/cargo), complexity_hotspots (git churn × complexity risk map), schema_drift (OpenAPI spec vs route drift), todo_extract (structured TODO/FIXME extraction), evidence_check (verify task evidence completeness)
 
 ## DELEGATION FORMAT
 
@@ -171,6 +171,7 @@ If .swarm/plan.md exists:
      - Inform user: "Resuming project from [other] swarm. Cleared stale context. Ready to continue."
      - Resume at current task
 If .swarm/plan.md does not exist → New project, proceed to Phase 1
+If new project: Run \`complexity_hotspots\` tool (90 days) to generate a risk map. Note modules with recommendation "security_review" or "full_gates" in context.md for stricter QA gates during Phase 5. Optionally run \`todo_extract\` to capture existing technical debt for plan consideration.
 
 ### Phase 1: Clarify
 Ambiguous request → Ask up to 3 questions, wait for answers
@@ -181,6 +182,9 @@ Delegate to {{AGENT_PREFIX}}explorer. Wait for response.
 For complex tasks, make a second explorer call focused on risk/gap analysis:
 - Hidden requirements, unstated assumptions, scope risks
 - Existing patterns that the implementation must follow
+After explorer returns:
+- Run \`symbols\` tool on key files identified by explorer to understand public API surfaces
+- Run \`complexity_hotspots\` if not already run in Phase 0 (check context.md for existing analysis). Note modules with recommendation "security_review" or "full_gates" in context.md.
 
 ### Phase 3: Consult SMEs
 Check .swarm/context.md for cached guidance first.
@@ -229,6 +233,7 @@ For each task (respecting dependencies):
    - List of doc files that may need updating (README.md, CONTRIBUTING.md, docs/)
 3. Update context.md
 4. Write retrospective evidence: record phase_number, total_tool_calls, coder_revisions, reviewer_rejections, test_failures, security_findings, integration_issues, task_count, task_complexity, top_rejection_reasons, lessons_learned to .swarm/evidence/ via the evidence manager. Reset Phase Metrics in context.md to 0.
+4.5. Run \`evidence_check\` to verify all completed tasks have required evidence (review + test). If gaps found, note in retrospective lessons_learned. Optionally run \`pkg_audit\` if dependencies were modified during this phase. Optionally run \`schema_drift\` if API routes were modified during this phase.
 5. Summarize to user
 6. Ask: "Ready for Phase [N+1]?"
 

@@ -480,6 +480,71 @@ The OpenCode Plugin API allows **one handler per hook type**. When multiple feat
 
 ---
 
+## Intelligence & Audit Tools (v6.5)
+
+Five new tools extend the architect's decision-making capabilities with intelligence gathering and QA auditing:
+
+### `todo_extract` — Annotation Scanner
+Extracts `TODO`, `FIXME`, and `HACK` annotations across the codebase using regex matching and file discovery (Node.js native glob for cross-platform safety).
+
+**Usage**: Phase 0 (resume check) or Phase 2 (discovery) to identify pre-existing work items and prioritize planning.
+
+**Input**: `paths` (directory whitelist), `tags` (annotation types), `exclude` (directory patterns)  
+**Output**: Structured JSON with file, line, tag, and content for each annotation
+
+**Safety**: Validates paths against workspace root, rejects shell metacharacters, enforces file size limits
+
+### `evidence_check` — Completeness Auditor
+Audits completed tasks in `.swarm/evidence/` against required evidence types (review, test, diff, approval). Identifies missing evidence before marking a phase complete.
+
+**Usage**: Phase 6 (phase complete) to verify every task has sufficient QA artifacts
+
+**Input**: Task ID pattern (wildcard support)  
+**Output**: JSON with per-task evidence status, missing types, and overall completeness score
+
+**Safety**: Validates task ID format, skips symlinks, reads JSON with size limits
+
+### `pkg_audit` — Vulnerability Scanner
+Wraps `npm audit`, `pip-audit`, and `cargo audit` via Bun.spawn to identify security vulnerabilities in project dependencies.
+
+**Usage**: Phase 2 (discovery) or Phase 6 (phase complete) to scope security risk and feed results to reviewer
+
+**Input**: `ecosystem` (npm|pip|cargo), `days` (vulnerability age), `top_n` (limit results)  
+**Output**: Structured CVE data with severity, patched versions, and advisory URLs
+
+**Safety**: Validates enum args strictly, bounds-checks integers (1-365 days, 1-100 results), enforces timeout via Promise.race
+
+### `complexity_hotspots` — Risk Mapper
+Combines cyclomatic complexity analysis with git churn metrics to identify high-risk modules before implementation.
+
+**Usage**: Phase 0/2 (early warning) or Phase 6 (post-implementation assessment) to flag modules needing stricter QA
+
+**Input**: `paths` (file patterns), `metrics` (complexity|churn|both)  
+**Output**: Ranked list of risky files with complexity score, recent commits, and risk level
+
+**Safety**: Uses Bun.spawn for git commands (not shell pipes), parses output in JavaScript, cross-platform path handling
+
+### `schema_drift` — API Contract Auditor
+Compares OpenAPI specification files against actual route implementations to surface undocumented routes and phantom spec paths.
+
+**Usage**: Phase 6 (when API routes were modified) to catch documentation drift before release
+
+**Input**: `spec_file` (path to OpenAPI JSON/YAML), `routes_dir` (implementation directory)  
+**Output**: Drift report with missing implementations, extra routes, and parameter mismatches
+
+**Safety**: Validates spec file extension whitelist and size limits (<10MB), uses lstatSync to skip symlinks, YAML parsing with regex `g` flag for multi-line patterns
+
+### Common Security Patterns
+
+All five tools follow strict security practices:
+- **Path validation**: `path.resolve()` + `startsWith(workspaceRoot + path.sep)` prevents traversal bypass
+- **Command execution**: Bun.spawn with array args (never string concat) to prevent shell injection
+- **Timeout protection**: Promise.race on all async operations to prevent hangs
+- **Input validation**: Enum/range checks on all user-supplied arguments
+- **File access**: Node.js native fs (not shell grep/find) for cross-platform safety
+
+---
+
 ## Context Pruning
 
 Context pruning manages the architect's context window to prevent overflow.
@@ -633,3 +698,220 @@ The system-enhancer reads the `## Agent Activity` section from context.md and ma
 - Other agents → general context
 
 Injected text is truncated to `hooks.agent_awareness_max_chars` (default: 300 characters).
+
+---
+
+## v6.7 Background Automation Framework
+
+**v6.7 is GUI-first and background-first:** Slash commands remain the primary control surface, but background automation provides autonomous operation when enabled.
+
+### Automation Modes
+
+Three modes control background-first rollout:
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| `manual` | No background automation, all actions via slash commands (default) | Conservative rollout, full control |
+| `hybrid` | Background automation for safe operations, slash commands for sensitive ones | Gradual feature rollout |
+| `auto` | Full background automation (target state) | Future production use |
+
+**Default:** `manual` for backward compatibility. Enable automation via config.
+
+### Per-Capability Feature Flags
+
+All v6.7 automation features are gated behind explicit feature flags (all default `false`):
+
+| Feature Flag | Description | Security |
+|--------------|-------------|----------|
+| `plan_sync` | Plan auto-heal: regenerate plan.md from canonical plan.json when out of sync | Safe - read-only regeneration |
+| `phase_preflight` | Phase-boundary preflight checks before agent execution | Safe - validation-only |
+| `config_doctor_on_startup` | Config Doctor runs on startup to validate/fix configuration | Moderate - auto-fix requires explicit opt-in |
+| `config_doctor_autofix` | Auto-fix mode for Config Doctor (requires config_doctor_on_startup) | **Safety: Defaults to false** - autofix requires explicit opt-in |
+| `evidence_auto_summaries` | Generate automatic summaries for evidence bundles | Safe - read-only aggregation |
+| `decision_drift_detection` | Detect drift between planned and actual decisions | Moderate - drift detection only |
+
+### Core Automation Components
+
+#### 1. Event Bus (`AutomationEventBus`)
+
+Typed event system for internal automation events. Events:
+- Queue events (`enqueued`, `dequeued`, `completed`, `failed`, `retry scheduled`)
+- Worker events (`started`, `stopped`, `error`)
+- Circuit breaker events (`opened`, `half-open`, `closed`, `callSuccess`, `callFailure`)
+- Loop protection events (`triggered`)
+- Preflight events (`requested`, `triggered`, `skipped`, `completed`)
+- Phase boundary events (`detected`, `checked`)
+- Task events (`completed`)
+- Evidence summary events (`generated`, `error`)
+
+All events include timestamp, payload, and optional source identifier.
+
+#### 2. Queue (`AutomationQueue`)
+
+Lightweight in-process queue with:
+- Priority levels: `critical` > `high` > `normal` > `low`
+- FIFO ordering within priority
+- Exponential backoff retry (configurable max)
+- Max queue size protection (default 1000)
+- Retry metadata tracking (attempts, next attempt time, backoff)
+
+#### 3. Worker Manager (`WorkerManager`)
+
+Lifecycle manager for background workers:
+- Register workers with handler functions
+- Configurable concurrency (default 1)
+- Auto-start support
+- Processing loop with idle detection
+- Statistics tracking (processed count, error count, queue size)
+
+#### 4. Circuit Breaker (`CircuitBreaker`)
+
+Fault tolerance primitive:
+- States: `closed` (normal) → `open` (fail fast) → `half-open` (testing recovery)
+- Configurable failure threshold (default 5) and reset timeout (default 30s)
+- Call timeout support (default 10s)
+- Success threshold for half-open → closed (default 3)
+
+Prevents cascading failures during background automation.
+
+#### 5. Loop Protection (`LoopProtection`)
+
+Infinite loop prevention:
+- Tracks operation frequency over time window (default 10s)
+- Configurable max iterations (default 5)
+- Operation key for tracking specific operations
+- Automatic detection and abort on threshold exceed
+
+#### 6. Status Artifact (`AutomationStatusArtifact`)
+
+Passive status writer for GUI visibility:
+- Writes to `.swarm/automation-status.json`
+- Tracks mode, capabilities, phase, triggers, outcomes
+- GUI-friendly summary with readable status text
+
+### Plan Sync Auto-Heal
+
+**v6.7 Task 5.1:** Automatic plan.json ↔ plan.md synchronization.
+
+#### Auto-Heal Flow
+
+```
+loadPlan(directory):
+  1. Try to load plan.json
+     ├─ VALID → Check if plan.md in sync
+     │  ├─ In sync → Return plan
+     │  └─ Out of sync → Auto-regenerate plan.md from plan.json
+     │
+     └─ INVALID → Try to migrate from plan.md
+        ├─ plan.md exists → Migrate, save both files, return plan
+        └─ plan.md doesn't exist → Fall through
+  2. Try to load plan.md only (no auto-migration)
+     ├─ Exists → Return migrated plan
+     └─ Doesn't exist → Fall through
+  3. Neither exists → Return null
+```
+
+#### Deterministic Hashing
+
+Content hash uses natural numeric sorting for task IDs:
+- `"1.2"` < `"1.10"` (not `"1.2" < "1.10"`)
+- Example: `1.1, 1.2, 1.10, 1.11, 2.1` (sorted correctly)
+- Hash stored in plan.md header as `<!-- PLAN_HASH: <hash> -->`
+
+#### Atomic Writes
+
+Plan.json writes use temp+rename pattern for atomicity:
+1. Write to `plan.json.tmp.{timestamp}`
+2. Atomic rename to `plan.json`
+3. Derive plan.md with hash comment
+
+### Services (Extracted from Commands)
+
+#### Preflight Service
+
+Validates project state before agent execution:
+- Checks plan completeness
+- Validates evidence requirements per task
+- Detects blockers and missing dependencies
+- Returns actionable findings with severity levels
+
+**Gated behind:** `automation.capabilities.phase_preflight`
+
+#### Config Doctor
+
+Startup service that validates and fixes configuration:
+- Validates config schema and types
+- Detects stale/invalid settings
+- Classifies findings by severity (info/warn/error)
+- Proposes safe auto-fixes
+
+**Security:** Defaults to scan-only mode. Autofix requires explicit `automation.capabilities.config_doctor_autofix = true`.
+
+**Backups:** Creates encrypted backups in `.swarm/` before auto-fix. Supports restore via `/swarm config doctor --restore <backup-id>`.
+
+#### Decision Drift Analyzer
+
+Detects drift between planned and actual decisions:
+- Stale decisions (age/phase mismatch)
+- Contradictory decisions (use vs don't use, keep vs remove, etc.)
+- Caches decisions from `## Decisions` section in context.md
+- Returns structured drift signals for context injection
+
+**Gated behind:** `automation.capabilities.decision_drift_detection`
+
+#### Evidence Summary Service
+
+Aggregates evidence per task and phase:
+- Machine-readable JSON summary in `.swarm/evidence-summary.json`
+- Human-readable markdown in `.swarm/evidence-summary.md`
+- Per-task completion status
+- Phase-level blockers (missing evidence, incomplete tasks, blocked tasks)
+
+**Gated behind:** `automation.capabilities.evidence_auto_summaries`
+
+### Slash Command Adapters
+
+Commands expose service functionality without blocking UI:
+
+| Command | Function | Security |
+|---------|----------|----------|
+| `/swarm preflight` | Run preflight checks on current plan | Safe - validation-only |
+| `/swarm config doctor [--fix] [--restore <id>]` | Config Doctor with optional auto-fix and restore | Moderate - auto-fix opt-in |
+| `/swarm sync-plan` | Force plan.md regeneration from plan.json | Safe - read-only |
+
+All commands:
+- Non-blocking (fire and forget for background ops)
+- Async execution (don't block OpenCode UI)
+- Log results to console
+- Store artifacts in `.swarm/`
+
+### GUI Visibility
+
+`AutomationStatusArtifact` provides passive status for GUI:
+
+```json
+{
+  "timestamp": 1234567890,
+  "mode": "manual",
+  "enabled": false,
+  "currentPhase": 2,
+  "lastTrigger": null,
+  "pendingActions": 0,
+  "lastOutcome": null,
+  "capabilities": {
+    "plan_sync": false,
+    "phase_preflight": false,
+    "config_doctor_on_startup": false,
+    "config_doctor_autofix": false,
+    "evidence_auto_summaries": false,
+    "decision_drift_detection": false
+  }
+}
+```
+
+GUI uses `getGuiSummary()` for display:
+- Status (Disabled / Hybrid / Auto)
+- Current phase
+- Last trigger time
+- Pending actions count
+- Last outcome (success/failure/skipped)

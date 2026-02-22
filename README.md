@@ -1,5 +1,5 @@
 <p align="center">
-   <img src="https://img.shields.io/badge/version-6.6.1-blue" alt="Version">
+   <img src="https://img.shields.io/badge/version-6.7.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
@@ -352,6 +352,9 @@ Per-agent profiles allow fine-grained overrides:
 | `/swarm benchmark` | Performance benchmarks |
 | `/swarm retrieve [id]` | Retrieve auto-summarized tool outputs |
 | `/swarm reset --confirm` | Clear swarm state files |
+| `/swarm preflight` | Run phase preflight checks (v6.7) |
+| `/swarm config doctor [--fix] [--restore <id>]` | Config validation with optional auto-fix (v6.7) |
+| `/swarm sync-plan` | Force plan.md regeneration from plan.json (v6.7) |
 
 ---
 
@@ -380,11 +383,52 @@ Per-agent profiles allow fine-grained overrides:
   "review_passes": {
     "always_security_review": false,
     "security_globs": ["**/*auth*", "**/*crypto*", "**/*session*", "**/*token*"]
+  },
+  "automation": {
+    "mode": "manual",
+    "capabilities": {
+      "plan_sync": false,
+      "phase_preflight": false,
+      "config_doctor_on_startup": false,
+      "config_doctor_autofix": false,
+      "evidence_auto_summaries": false,
+      "decision_drift_detection": false
+    }
   }
 }
 ```
 
 Save to `~/.config/opencode/opencode-swarm.json` or `.opencode/swarm.json` in your project root. Project config merges over global config via deep merge — partial overrides do not clobber unspecified fields.
+
+### Automation (v6.7)
+
+**Default mode: `manual`** (no background automation). Enable automation features via `automation` config:
+
+```json
+{
+  "automation": {
+    "mode": "hybrid",
+    "capabilities": {
+      "plan_sync": true,
+      "config_doctor_on_startup": true,
+      "evidence_auto_summaries": true
+    }
+  }
+}
+```
+
+**Automation modes:**
+- `manual` - No background automation (default)
+- `hybrid` - Background automation for safe ops, manual for sensitive ones
+- `auto` - Full background automation (target state)
+
+**Per-feature flags (all default `false`):**
+- `plan_sync` - Auto-regenerate plan.md from plan.json when out of sync
+- `phase_preflight` - Phase-boundary validation before agent execution
+- `config_doctor_on_startup` - Config validation on plugin initialization
+- `config_doctor_autofix` - Auto-fix mode for Config Doctor (requires explicit opt-in)
+- `evidence_auto_summaries` - Auto-generate evidence summaries
+- `decision_drift_detection` - Detect drift between planned and actual decisions
 
 ### Disabling Agents
 

@@ -33,11 +33,141 @@ export async function loadPlanJsonOnly(
 }
 
 /**
- * Load and validate plan from .swarm/plan.json with 4-step precedence:
- * 1. .swarm/plan.json exists AND validates → return parsed Plan
- * 2. .swarm/plan.json exists but FAILS validation → log warning, fall to step 3
- * 3. .swarm/plan.md exists → call migrateLegacyPlan(), save result, return it
- * 4. Neither exists → return null
+ * Natural numeric comparison for task IDs (e.g., "1.2" < "1.10").
+ * This ensures deterministic ordering: 1.1, 1.2, 1.10, 1.11, 2.1
+ */
+function compareTaskIds(a: string, b: string): number {
+	const partsA = a.split('.').map((n) => parseInt(n, 10));
+	const partsB = b.split('.').map((n) => parseInt(n, 10));
+	const maxLen = Math.max(partsA.length, partsB.length);
+
+	for (let i = 0; i < maxLen; i++) {
+		const numA = partsA[i] ?? 0;
+		const numB = partsB[i] ?? 0;
+		if (numA !== numB) {
+			return numA - numB;
+		}
+	}
+	return 0;
+}
+
+/**
+ * Compute deterministic content hash for plan (excludes timestamp/derived fields).
+ * Used to detect drift between plan.json and plan.md.
+ * Uses natural numeric sorting for task IDs (1.2 < 1.10).
+ * Returns a short hash string for compact storage in plan.md.
+ */
+function computePlanContentHash(plan: Plan): string {
+	// Create deterministic representation (no timestamps, sorted IDs)
+	const content = {
+		schema_version: plan.schema_version,
+		title: plan.title,
+		swarm: plan.swarm,
+		current_phase: plan.current_phase,
+		migration_status: plan.migration_status,
+		phases: plan.phases
+			.map((phase) => ({
+				id: phase.id,
+				name: phase.name,
+				status: phase.status,
+				tasks: phase.tasks
+					.map((task) => ({
+						id: task.id,
+						phase: task.phase,
+						status: task.status,
+						size: task.size,
+						description: task.description,
+						depends: [...task.depends].sort(compareTaskIds),
+						acceptance: task.acceptance,
+						files_touched: [...task.files_touched].sort(),
+						evidence_path: task.evidence_path,
+						blocked_reason: task.blocked_reason,
+					}))
+					.sort((a, b) => compareTaskIds(a.id, b.id)),
+			}))
+			.sort((a, b) => a.id - b.id),
+	};
+	const jsonString = JSON.stringify(content);
+	// Use Bun's hash for a compact hash string
+	return Bun.hash(jsonString).toString(36);
+}
+
+/**
+ * Extract content hash from plan.md header if present.
+ * Format: <!-- PLAN_HASH: <hash> -->
+ */
+function extractPlanHashFromMarkdown(markdown: string): string | null {
+	const match = markdown.match(/<!--\s*PLAN_HASH:\s*(\S+)\s*-->/);
+	return match ? match[1] : null;
+}
+
+/**
+ * Check if plan.md is derived from the given plan by comparing content hashes.
+ * Returns true if plan.md exists and matches the plan's content hash.
+ * This avoids timestamp comparison issues by using a deterministic hash.
+ */
+async function isPlanMdInSync(directory: string, plan: Plan): Promise<boolean> {
+	const planMdContent = await readSwarmFileAsync(directory, 'plan.md');
+	if (planMdContent === null) {
+		return false;
+	}
+
+	// Compute deterministic hash from plan
+	const expectedHash = computePlanContentHash(plan);
+
+	// Try to extract hash from existing plan.md
+	const existingHash = extractPlanHashFromMarkdown(planMdContent);
+
+	// If both hashes match, plan.md is in sync
+	if (existingHash === expectedHash) {
+		return true;
+	}
+
+	// Fallback: If no hash in plan.md but content structure matches, still in sync
+	// This provides backward compatibility with plan.md files generated before hashing
+	const expectedMarkdown = derivePlanMarkdown(plan);
+	const normalizedExpected = expectedMarkdown.trim();
+	const normalizedActual = planMdContent.trim();
+
+	// Check if actual matches expected (allowing for trailing whitespace differences)
+	if (normalizedActual === normalizedExpected) {
+		return true;
+	}
+
+	// Check if actual contains the derived content (handles added comments/metadata)
+	return (
+		normalizedActual.includes(normalizedExpected) ||
+		normalizedExpected.includes(normalizedActual.replace(/^#.*$/gm, '').trim())
+	);
+}
+
+/**
+ * Regenerate plan.md from valid plan.json (auto-heal case 1).
+ */
+async function regeneratePlanMarkdown(
+	directory: string,
+	plan: Plan,
+): Promise<void> {
+	const swarmDir = path.resolve(directory, '.swarm');
+	const contentHash = computePlanContentHash(plan);
+	const markdown = derivePlanMarkdown(plan);
+	// Prepend hash as comment for sync detection
+	const markdownWithHash = `<!-- PLAN_HASH: ${contentHash} -->\n${markdown}`;
+	await Bun.write(path.join(swarmDir, 'plan.md'), markdownWithHash);
+}
+
+/**
+ * Load and validate plan from .swarm/plan.json with auto-heal sync.
+ *
+ * 4-step precedence with auto-heal:
+ * 1. .swarm/plan.json exists AND validates ->
+ *    a) If plan.md missing or stale -> regenerate plan.md from plan.json
+ *    b) Return parsed Plan
+ * 2. .swarm/plan.json exists but FAILS validation ->
+ *    a) If plan.md exists -> migrate from plan.md, save valid plan.json, then derive plan.md
+ *    b) Return migrated Plan
+ * 3. .swarm/plan.md exists only -> migrate from plan.md, save both files, return Plan
+ * 4. Neither exists -> return null
  */
 export async function loadPlan(directory: string): Promise<Plan | null> {
 	// Step 1: Try to load and validate plan.json
@@ -46,20 +176,43 @@ export async function loadPlan(directory: string): Promise<Plan | null> {
 		try {
 			const parsed = JSON.parse(planJsonContent);
 			const validated = PlanSchema.parse(parsed);
+
+			// Auto-heal case 1: Valid plan.json exists, check if plan.md needs regeneration
+			const inSync = await isPlanMdInSync(directory, validated);
+			if (!inSync) {
+				try {
+					await regeneratePlanMarkdown(directory, validated);
+				} catch (regenError) {
+					// Log warning but don't fail - plan.json is valid
+					warn(
+						`Failed to regenerate plan.md: ${regenError instanceof Error ? regenError.message : String(regenError)}. Proceeding with plan.json only.`,
+					);
+				}
+			}
+
 			return validated;
 		} catch (error) {
 			// Step 2: Validation failed, log warning and fall through to legacy
 			warn(
 				`Plan validation failed for .swarm/plan.json: ${error instanceof Error ? error.message : String(error)}`,
 			);
+			// Auto-heal case 2: plan.json invalid but plan.md exists -> migrate from plan.md
+			const planMdContent = await readSwarmFileAsync(directory, 'plan.md');
+			if (planMdContent !== null) {
+				const migrated = migrateLegacyPlan(planMdContent);
+				// savePlan writes both plan.json and plan.md
+				await savePlan(directory, migrated);
+				return migrated;
+			}
+			// If plan.md doesn't exist either, fall through to step 3
 		}
 	}
 
-	// Step 3: Try to migrate from legacy plan.md
+	// Step 3: Try to migrate from legacy plan.md (no plan.json exists)
 	const planMdContent = await readSwarmFileAsync(directory, 'plan.md');
 	if (planMdContent !== null) {
 		const migrated = migrateLegacyPlan(planMdContent);
-		// Save the migrated plan
+		// Save the migrated plan (writes both files)
 		await savePlan(directory, migrated);
 		return migrated;
 	}
@@ -87,9 +240,11 @@ export async function savePlan(directory: string, plan: Plan): Promise<void> {
 	const { renameSync } = await import('node:fs');
 	renameSync(tempPath, planPath);
 
-	// Derive and write markdown
+	// Derive and write markdown (with content hash for sync detection)
+	const contentHash = computePlanContentHash(validated);
 	const markdown = derivePlanMarkdown(validated);
-	await Bun.write(path.join(swarmDir, 'plan.md'), markdown);
+	const markdownWithHash = `<!-- PLAN_HASH: ${contentHash} -->\n${markdown}`;
+	await Bun.write(path.join(swarmDir, 'plan.md'), markdownWithHash);
 }
 
 /**
@@ -129,7 +284,8 @@ export async function updateTaskStatus(
 }
 
 /**
- * Generate markdown view from plan object
+ * Generate deterministic markdown view from plan object.
+ * Ensures stable ordering: phases by ID (ascending), tasks by ID (natural numeric).
  */
 export function derivePlanMarkdown(plan: Plan): string {
 	const statusMap: Record<string, string> = {
@@ -145,14 +301,22 @@ export function derivePlanMarkdown(plan: Plan): string {
 
 	let markdown = `# ${plan.title}\nSwarm: ${plan.swarm}\nPhase: ${plan.current_phase} [${phaseStatus}] | Updated: ${now}\n`;
 
-	for (const phase of plan.phases) {
+	// Sort phases deterministically by ID (ascending)
+	const sortedPhases = [...plan.phases].sort((a, b) => a.id - b.id);
+
+	for (const phase of sortedPhases) {
 		const phaseStatusText = statusMap[phase.status] || 'PENDING';
 		markdown += `\n## Phase ${phase.id}: ${phase.name} [${phaseStatusText}]\n`;
+
+		// Sort tasks deterministically by ID (natural numeric, e.g., "1.1", "1.2", "1.10")
+		const sortedTasks = [...phase.tasks].sort((a, b) =>
+			compareTaskIds(a.id, b.id),
+		);
 
 		// Find the first in_progress task in the current phase to mark as CURRENT
 		let currentTaskMarked = false;
 
-		for (const task of phase.tasks) {
+		for (const task of sortedTasks) {
 			let taskLine = '';
 			let suffix = '';
 
@@ -171,9 +335,10 @@ export function derivePlanMarkdown(plan: Plan): string {
 			// Add size
 			taskLine += ` [${task.size.toUpperCase()}]`;
 
-			// Add dependencies if present
+			// Add dependencies if present (sorted for determinism)
 			if (task.depends.length > 0) {
-				suffix += ` (depends: ${task.depends.join(', ')})`;
+				const sortedDepends = [...task.depends].sort();
+				suffix += ` (depends: ${sortedDepends.join(', ')})`;
 			}
 
 			// Mark as CURRENT if it's the first in_progress task in current phase

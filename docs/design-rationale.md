@@ -281,6 +281,51 @@ Architect respects dependencies. Won't start 2.2 until 2.1 is complete.
 
 ---
 
+### 11. Background-First Automation (v6.7)
+
+**The temptation:** Make automation optional via UI only.
+
+**The reality:** Background automation enables truly autonomous workflows. Manual triggers create friction and don't scale. The danger is rushing into automation without safeguards.
+
+**Swarm's approach:** Background automation as the default state, with explicit feature flags and default-off safety.
+
+```json
+{
+  "automation": {
+    "mode": "manual",  // Default: conservative, full control
+    "capabilities": {
+      "plan_sync": false,
+      "phase_preflight": false,
+      "config_doctor_on_startup": false,
+      "config_doctor_autofix": false,
+      "evidence_auto_summaries": false,
+      "decision_drift_detection": false
+    }
+  }
+}
+```
+
+**Why this works:**
+- **Progressive rollout:** Start with `manual`, enable features as needed
+- **Explicit opt-in:** Every automation feature has a feature flag (all default false)
+- **Fail-safe defaults:** Nothing auto-runs unless explicitly enabled
+- **User control:** Architect chooses when to enable automation
+- **Reversible:** Disable mode or specific capabilities anytime
+
+**Safety mechanisms:**
+- Circuit breaker prevents cascading failures
+- Loop protection stops infinite automation loops
+- Event bus logs all automation events for audit trail
+- Status artifact shows automation state in GUI
+
+**Real-world benefits:**
+- Config Doctor runs on startup without blocking architect
+- Evidence summaries generated automatically for long-running tasks
+- Plan sync happens in background, architect focuses on coding
+- Drift detection catches contradictions while architect is distracted
+
+---
+
 ## The Result
 
 When you combine all these decisions:
@@ -297,5 +342,6 @@ When you combine all these decisions:
 | Full autonomy disasters | User checkpoints |
 | Silent failures | Documented attempts |
 | Implicit ordering | Explicit dependencies |
+| Manual-only workflow | **Background-first automation** (v6.7) |
 
-**The difference**: Code that actually works.
+**The difference:** Code that actually works. And gets done efficiently.

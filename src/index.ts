@@ -1,9 +1,17 @@
 import type { Plugin } from '@opencode-ai/plugin';
+import * as path from 'path';
 import { createAgents, getAgentConfigs } from './agents';
+import {
+	type AutomationStatusArtifact,
+	type BackgroundAutomationManager,
+	createAutomationManager,
+	type PreflightTriggerManager,
+} from './background';
 import { createSwarmCommandHandler } from './commands';
-import { loadPluginConfig, loadPluginConfigWithMeta } from './config';
+import { loadPluginConfigWithMeta } from './config';
 import { ORCHESTRATOR_NAME } from './config/constants';
 import {
+	AutomationConfigSchema,
 	GuardrailsConfigSchema,
 	SummaryConfigSchema,
 	stripKnownSwarmPrefix,
@@ -21,19 +29,25 @@ import {
 	createToolSummarizerHook,
 	safeHook,
 } from './hooks';
+import { shouldRunOnStartup } from './services/config-doctor';
 import { ensureAgentSession, swarmState } from './state';
 import {
 	checkpoint,
+	complexity_hotspots,
 	detect_domains,
 	diff,
+	evidence_check,
 	extract_code_blocks,
 	gitingest,
 	imports,
 	lint,
+	pkg_audit,
 	retrieve_summary,
+	schema_drift,
 	secretscan,
 	symbols,
 	test_runner,
+	todo_extract,
 } from './tools';
 import { log } from './utils';
 
@@ -61,16 +75,52 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 	);
 	const activityHooks = createAgentActivityHooks(config, ctx.directory);
 	const delegationGateHandler = createDelegationGateHook(config);
-	// Fail-safe: honor explicit guardrails.enabled === false first (highest priority),
-	// then fall back to file-loaded config or disabled-by-default when no file exists.
-	// This ensures a deliberate disable survives even if other config parts are invalid.
+	// Fail-secure: honor explicit guardrails.enabled === false first (highest priority),
+	// then fall back to file-loaded config. When no config file exists, use config defaults
+	// (which now have guardrails enabled due to fail-secure loader behavior).
 	const guardrailsFallback =
 		config.guardrails?.enabled === false
 			? { ...config.guardrails, enabled: false }
 			: loadedFromFile
 				? (config.guardrails ?? {})
-				: { ...config.guardrails, enabled: false };
+				: config.guardrails; // Use loader defaults (fail-secure)
 	const guardrailsConfig = GuardrailsConfigSchema.parse(guardrailsFallback);
+
+	// SECURITY AUDIT: Emit explicit warning when guardrails are disabled via user config
+	// This is a security-relevant action that requires explicit acknowledgment
+	if (loadedFromFile && guardrailsConfig.enabled === false) {
+		console.warn('');
+		console.warn(
+			'══════════════════════════════════════════════════════════════',
+		);
+		console.warn(
+			'[opencode-swarm] 🔴 SECURITY WARNING: GUARDRAILS ARE DISABLED',
+		);
+		console.warn(
+			'══════════════════════════════════════════════════════════════',
+		);
+		console.warn(
+			'Guardrails have been explicitly disabled in user configuration.',
+		);
+		console.warn('This disables safety measures including:');
+		console.warn('  - Tool call limits');
+		console.warn('  - Duration limits');
+		console.warn('  - Repetition detection');
+		console.warn('  - Error rate limits');
+		console.warn('  - Idle timeouts');
+		console.warn('');
+		console.warn(
+			'Only disable guardrails if you fully understand the security implications.',
+		);
+		console.warn(
+			'To re-enable guardrails, set "guardrails.enabled" to true in your config.',
+		);
+		console.warn(
+			'══════════════════════════════════════════════════════════════',
+		);
+		console.warn('');
+	}
+
 	const delegationHandler = createDelegationTrackerHook(
 		config,
 		guardrailsConfig.enabled,
@@ -82,11 +132,82 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		ctx.directory,
 	);
 
+	// Parse automation config (v6.7 feature flags)
+	// Read flags without activating - scaffold only for now
+	const automationConfig = AutomationConfigSchema.parse(
+		config.automation ?? {},
+	);
+
+	// Initialize background automation framework (scaffold only - no business features yet)
+	// Only enabled when automation mode is not 'manual' (default-off behavior)
+	let automationManager: BackgroundAutomationManager | undefined;
+	let preflightTriggerManager: PreflightTriggerManager | undefined;
+	let statusArtifact: AutomationStatusArtifact | undefined;
+
+	if (automationConfig.mode !== 'manual') {
+		automationManager = createAutomationManager(automationConfig);
+
+		// v6.7 Task 5.5: Initialize trigger manager (plumbing only, no preflight logic yet)
+		const { PreflightTriggerManager: PTM } = await import(
+			'./background/trigger'
+		);
+		preflightTriggerManager = new PTM(automationConfig);
+
+		// v6.7 Task 5.5: Initialize status artifact for GUI visibility
+		const { AutomationStatusArtifact: ASA } = await import(
+			'./background/status-artifact'
+		);
+		const swarmDir = path.resolve(ctx.directory, '.swarm');
+		statusArtifact = new ASA(swarmDir);
+		statusArtifact.updateConfig(
+			automationConfig.mode,
+			automationConfig.capabilities,
+		);
+
+		log('Automation framework initialized', {
+			mode: automationConfig.mode,
+			enabled: automationManager?.isEnabled(),
+			preflightEnabled: preflightTriggerManager?.isEnabled(),
+		});
+	}
+
+	// v6.7 Task 5.7: Config Doctor - run on startup if automation flags permit
+	// Runs in background-safe way (non-blocking, no errors propagate)
+	// SECURITY: Default is scan-only (autoFix=false). Autofix requires explicit opt-in
+	// via config_doctor_autofix capability.
+	if (shouldRunOnStartup(automationConfig)) {
+		// Autofix is opt-in only - requires explicit config_doctor_autofix capability
+		const enableAutofix =
+			automationConfig.capabilities?.config_doctor_autofix === true;
+
+		// Dynamically import to avoid circular dependencies
+		import('./services/config-doctor').then(({ runConfigDoctorWithFixes }) => {
+			// Default to scan-only mode (autoFix=false) for security
+			// Autofix only runs when explicitly enabled via capability
+			runConfigDoctorWithFixes(ctx.directory, config, enableAutofix)
+				.then((doctorResult) => {
+					if (doctorResult.result.findings.length > 0) {
+						log('Config Doctor ran on startup', {
+							findings: doctorResult.result.findings.length,
+							errors: doctorResult.result.summary.error,
+							warnings: doctorResult.result.summary.warn,
+							appliedFixes: doctorResult.appliedFixes.length,
+							autofixEnabled: enableAutofix,
+						});
+					}
+				})
+				.catch((err) => {
+					// Config doctor errors should NOT block startup
+					log('Config Doctor error (non-fatal)', {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
+		});
+	}
+
 	log('Plugin initialized', {
-		directory: ctx.directory,
 		maxIterations: config.max_iterations,
 		agentCount: Object.keys(agents).length,
-		agentNames: Object.keys(agents),
 		hooks: {
 			pipeline: !!pipelineHook['experimental.chat.messages.transform'],
 			systemEnhancer:
@@ -99,6 +220,11 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			guardrails: guardrailsConfig.enabled,
 			toolSummarizer: summaryConfig.enabled,
 		},
+		// v6.7 automation flags (scaffold only - not yet active)
+		automation: {
+			mode: automationConfig.mode,
+			capabilities: automationConfig.capabilities,
+		},
 	});
 
 	return {
@@ -110,16 +236,21 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		// Register tools
 		tool: {
 			checkpoint,
+			complexity_hotspots,
 			detect_domains,
+			evidence_check,
 			extract_code_blocks,
 			gitingest,
 			imports,
 			lint,
 			diff,
+			pkg_audit,
 			retrieve_summary,
+			schema_drift,
 			secretscan,
 			symbols,
 			test_runner,
+			todo_extract,
 		},
 
 		// Configure OpenCode - merge agents into config
@@ -243,6 +374,10 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 		// Track agent delegations and active agent
 		// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
 		'chat.message': safeHook(delegationHandler) as any,
+
+		// v6.7 Background automation framework (scaffold only)
+		// Exposed for future Task 5.x business feature integration
+		automation: automationManager,
 	};
 };
 
@@ -252,6 +387,9 @@ export type { AgentDefinition } from './agents';
 // Export types for consumers
 export type {
 	AgentName,
+	AutomationCapabilities,
+	AutomationConfig,
+	AutomationMode,
 	PipelineAgentName,
 	PluginConfig,
 	QAAgentName,

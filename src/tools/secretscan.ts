@@ -946,3 +946,35 @@ export const secretscan: ReturnType<typeof tool> = tool({
 		}
 	},
 });
+
+// ============ Standalone Run Function ============
+// Reusable function for programmatic calls (e.g., preflight service)
+/**
+ * Run secretscan programmatically
+ */
+export async function runSecretscan(
+	directory: string,
+): Promise<SecretscanResult | SecretscanErrorResult> {
+	try {
+		// Call the tool's execute function with proper args format
+		// Use type assertion to bypass strict context requirements for programmatic calls
+		const result = await secretscan.execute(
+			{ directory },
+			{} as Parameters<typeof secretscan.execute>[1],
+		);
+		return JSON.parse(result) as SecretscanResult | SecretscanErrorResult;
+	} catch (e) {
+		const errorResult: SecretscanErrorResult = {
+			error:
+				e instanceof Error
+					? `scan failed: ${e.message}`
+					: 'scan failed: unknown error',
+			scan_dir: directory,
+			findings: [],
+			count: 0,
+			files_scanned: 0,
+			skipped_files: 0,
+		};
+		return errorResult;
+	}
+}

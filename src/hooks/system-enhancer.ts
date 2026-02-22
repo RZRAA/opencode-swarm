@@ -13,6 +13,7 @@ import { DEFAULT_SCORING_CONFIG } from '../config/constants';
 import type { RetrospectiveEvidence } from '../config/evidence-schema';
 import { stripKnownSwarmPrefix } from '../config/schema';
 import { loadPlan } from '../plan/manager';
+import { analyzeDecisionDrift, formatDriftForContext } from '../services';
 import { swarmState } from '../state';
 import { warn } from '../utils';
 import {
@@ -217,10 +218,21 @@ export function createSystemEnhancerHook(
 										.reverse();
 
 									for (const file of files.slice(0, 5)) {
-										const content = JSON.parse(
-											fs.readFileSync(path.join(evidenceDir, file), 'utf-8'),
-										);
-										if (content.type === 'retrospective') {
+										let content: unknown;
+										try {
+											content = JSON.parse(
+												fs.readFileSync(path.join(evidenceDir, file), 'utf-8'),
+											);
+										} catch {
+											// Skip malformed evidence files
+											continue;
+										}
+										if (
+											content !== null &&
+											typeof content === 'object' &&
+											(content as Record<string, unknown>).type ===
+												'retrospective'
+										) {
 											const retro = content as RetrospectiveEvidence;
 											const hints: string[] = [];
 
@@ -284,6 +296,34 @@ export function createSystemEnhancerHook(
 											break;
 										}
 									}
+								}
+							}
+						}
+
+						// v6.7: Decision drift detection — architect-only
+						const automationCapabilities = config.automation?.capabilities;
+						if (
+							automationCapabilities?.decision_drift_detection === true &&
+							_input.sessionID
+						) {
+							const activeAgentForDrift = swarmState.activeAgent.get(
+								_input.sessionID,
+							);
+							const isArchitectForDrift =
+								!activeAgentForDrift ||
+								stripKnownSwarmPrefix(activeAgentForDrift) === 'architect';
+
+							if (isArchitectForDrift) {
+								try {
+									const driftResult = await analyzeDecisionDrift(directory);
+									if (driftResult.hasDrift) {
+										const driftText = formatDriftForContext(driftResult);
+										if (driftText) {
+											tryInject(driftText);
+										}
+									}
+								} catch {
+									// Silently skip if drift analysis fails
 								}
 							}
 						}
@@ -495,10 +535,21 @@ export function createSystemEnhancerHook(
 									.reverse();
 
 								for (const file of files_b.slice(0, 5)) {
-									const content_b = JSON.parse(
-										fs.readFileSync(path.join(evidenceDir_b, file), 'utf-8'),
-									);
-									if (content_b.type === 'retrospective') {
+									let content_b: unknown;
+									try {
+										content_b = JSON.parse(
+											fs.readFileSync(path.join(evidenceDir_b, file), 'utf-8'),
+										);
+									} catch {
+										// Skip malformed evidence files
+										continue;
+									}
+									if (
+										content_b !== null &&
+										typeof content_b === 'object' &&
+										(content_b as Record<string, unknown>).type ===
+											'retrospective'
+									) {
 										const retro_b = content_b as RetrospectiveEvidence;
 										const hints_b: string[] = [];
 
@@ -576,6 +627,41 @@ export function createSystemEnhancerHook(
 										break;
 									}
 								}
+							}
+						}
+					}
+
+					// v6.7: Decision drift detection — architect-only
+					const automationCapabilities_b = config.automation?.capabilities;
+					if (
+						automationCapabilities_b?.decision_drift_detection === true &&
+						sessionId_retro_b
+					) {
+						const activeAgentForDrift_b = swarmState.activeAgent.get(
+							sessionId_retro_b ?? '',
+						);
+						const isArchitectForDrift_b =
+							!activeAgentForDrift_b ||
+							stripKnownSwarmPrefix(activeAgentForDrift_b) === 'architect';
+
+						if (isArchitectForDrift_b) {
+							try {
+								const driftResult_b = await analyzeDecisionDrift(directory);
+								if (driftResult_b.hasDrift) {
+									const driftText_b = formatDriftForContext(driftResult_b);
+									if (driftText_b) {
+										candidates.push({
+											id: `candidate-${idCounter++}`,
+											kind: 'phase' as ContextCandidate['kind'],
+											text: driftText_b,
+											tokens: estimateTokens(driftText_b),
+											priority: 2, // High priority for drift signals
+											metadata: { contentType: 'prose' as ContentType },
+										});
+									}
+								}
+							} catch {
+								// Silently skip if drift analysis fails
 							}
 						}
 					}

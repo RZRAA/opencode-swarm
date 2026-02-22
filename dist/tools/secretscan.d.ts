@@ -28,4 +28,8 @@ export interface SecretscanErrorResult {
     skipped_files: 0;
 }
 export declare const secretscan: ReturnType<typeof tool>;
+/**
+ * Run secretscan programmatically
+ */
+export declare function runSecretscan(directory: string): Promise<SecretscanResult | SecretscanErrorResult>;
 export {};

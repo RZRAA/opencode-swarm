@@ -199,7 +199,9 @@ export const CompactionAdvisoryConfigSchema = z.object({
 	message: z
 		.string()
 		.default(
-			'[SWARM HINT] Session has ${totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.',
+			'[SWARM HINT] Session has ' +
+				'$' +
+				'{totalToolCalls} tool calls. Consider compacting at next phase boundary to maintain context quality.',
 		),
 });
 
@@ -397,7 +399,7 @@ export function stripKnownSwarmPrefix(name: string): string {
 		// Suffix match: check if normalized name ends with _<knownAgentName>
 		// This handles underscore, hyphen, and space separators uniformly
 		// after normalization to underscore
-		if (normalized.endsWith('_' + normalizedAgent)) {
+		if (normalized.endsWith(`_${normalizedAgent}`)) {
 			return agentName;
 		}
 	}
@@ -449,6 +451,56 @@ export const CheckpointConfigSchema = z.object({
 });
 
 export type CheckpointConfig = z.infer<typeof CheckpointConfigSchema>;
+
+// Automation mode enum: controls background-first automation rollout
+// - manual: No background automation, all actions via slash commands (v6.6 behavior)
+// - hybrid: Background automation for safe operations, slash commands for sensitive ones
+// - auto: Full background automation (v6.7 target, not yet fully implemented)
+export const AutomationModeSchema = z.enum(['manual', 'hybrid', 'auto']);
+
+export type AutomationMode = z.infer<typeof AutomationModeSchema>;
+
+// Per-capability feature flags for v6.7 automation features
+// All default to false for backward compatibility (safe defaults)
+export const AutomationCapabilitiesSchema = z.object({
+	// Enable background plan synchronization with external state
+	plan_sync: z.boolean().default(false),
+	// Enable phase preflight checks before agent execution
+	phase_preflight: z.boolean().default(false),
+	// Run config doctor on startup to validate/fix configuration
+	config_doctor_on_startup: z.boolean().default(false),
+	// Enable auto-fix for config doctor (requires config_doctor_on_startup)
+	// SECURITY: Defaults to false - autofix requires explicit opt-in
+	config_doctor_autofix: z.boolean().default(false),
+	// Generate automatic summaries for evidence bundles
+	evidence_auto_summaries: z.boolean().default(false),
+	// Detect drift between planned and actual decisions
+	decision_drift_detection: z.boolean().default(false),
+});
+
+export type AutomationCapabilities = z.infer<
+	typeof AutomationCapabilitiesSchema
+>;
+
+// Top-level automation configuration for v6.7 background-first rollout
+// Mode defaults to 'manual' for conservative backward compatibility
+const AutomationConfigSchemaBase = z.object({
+	mode: AutomationModeSchema.default('manual'),
+	capabilities: AutomationCapabilitiesSchema.default({
+		plan_sync: false,
+		phase_preflight: false,
+		config_doctor_on_startup: false,
+		config_doctor_autofix: false,
+		evidence_auto_summaries: false,
+		decision_drift_detection: false,
+	}),
+});
+
+export type AutomationConfig = z.infer<typeof AutomationConfigSchemaBase>;
+
+// Schema for optional automation field - applies defaults when field is present
+export const AutomationConfigSchema: z.ZodType<AutomationConfig> =
+	AutomationConfigSchemaBase;
 
 // Main plugin configuration
 export const PluginConfigSchema = z.object({
@@ -507,6 +559,10 @@ export const PluginConfigSchema = z.object({
 
 	// Checkpoint configuration
 	checkpoint: CheckpointConfigSchema.optional(),
+
+	// Automation configuration (v6.7 background-first rollout)
+	// Controls background automation mode and per-feature toggles
+	automation: AutomationConfigSchema.optional(),
 });
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;

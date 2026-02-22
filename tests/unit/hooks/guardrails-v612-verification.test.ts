@@ -76,14 +76,14 @@ describe('v6.1.2 Guardrails Remediation', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// v6.1.2 fix: validation failure should return guardrails.enabled === false
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure should return guardrails.enabled === true
+				expect(config.guardrails?.enabled).toBe(true);
 			} finally {
 				fs.rmSync(projectDir, { recursive: true, force: true });
 			}
 		});
 
-		it('returns guardrails.enabled: false when project config has invalid guardrails config', () => {
+		it('returns guardrails.enabled: true when project config has invalid guardrails config', () => {
 			// Create project config with invalid guardrails config
 			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
 			const configDir = path.join(projectDir, '.opencode');
@@ -100,14 +100,14 @@ describe('v6.1.2 Guardrails Remediation', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// v6.1.2 fix: validation failure should return guardrails.enabled === false
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure should return guardrails.enabled === true
+				expect(config.guardrails?.enabled).toBe(true);
 			} finally {
 				fs.rmSync(projectDir, { recursive: true, force: true });
 			}
 		});
 
-		it('returned disabled config has all default guardrails fields', () => {
+		it('returned config has all default guardrails fields when validation fails', () => {
 			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
 			const configDir = path.join(projectDir, '.opencode');
 			fs.mkdirSync(configDir, { recursive: true });
@@ -119,8 +119,8 @@ describe('v6.1.2 Guardrails Remediation', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// Verify the disabled config still has valid structure
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure should return guardrails.enabled === true
+				expect(config.guardrails?.enabled).toBe(true);
 				// Should have all defaults from GuardrailsConfigSchema
 				expect(config.guardrails?.max_tool_calls).toBe(200);
 				expect(config.guardrails?.max_duration_minutes).toBe(30);

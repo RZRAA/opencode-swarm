@@ -165,8 +165,8 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// Validation failure returns guardrails.enabled: false
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure returns guardrails.enabled: true
+				expect(config.guardrails?.enabled).toBe(true);
 			} finally {
 				fs.rmSync(projectDir, { recursive: true, force: true });
 			}
@@ -516,8 +516,9 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 		});
 
 		it('fallback logic correctly handles undefined guardrails without loadedFromFile', () => {
-			// Simulate the index.ts fallback logic when no config file exists
-			const config = {};
+			// Simulate the NEW index.ts fallback logic when no config file exists
+			// With fail-secure fix, we now use the config defaults directly (no override to false)
+			const config = { guardrails: { enabled: true } }; // New fail-secure default from loader
 			const loadedFromFile = false;
 
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -526,10 +527,10 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 					? { ...(config as any).guardrails, enabled: false }
 					: loadedFromFile
 						? ((config as any).guardrails ?? {})
-						: { ...(config as any).guardrails, enabled: false };
+						: (config as any).guardrails; // Use loader defaults directly
 
-			// Should be disabled
-			expect(guardrailsFallback.enabled).toBe(false);
+			// With fail-secure, should preserve the enabled: true from config
+			expect(guardrailsFallback.enabled).toBe(true);
 		});
 	});
 
@@ -537,7 +538,7 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 	// ATTACK VECTOR 8: Double-disable — validation failure AND explicit disable
 	// ============================================================
 	describe('Attack Vector 8 — Double-disable: validation failure + explicit disable', () => {
-		it('guardrails remains disabled when BOTH validation fails AND enabled:false is set', () => {
+		it('guardrails remains enabled when BOTH validation fails AND enabled:false is set', () => {
 			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
 			const configDir = path.join(projectDir, '.opencode');
 			fs.mkdirSync(configDir, { recursive: true });
@@ -554,18 +555,17 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// Guardrails should remain disabled
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure returns guardrails.enabled: true
+				expect(config.guardrails?.enabled).toBe(true);
 
-				// When validation fails, the loader returns defaults (max_tool_calls: 200)
-				// NOT the user's 500 — validation failure means config is untrustworthy
+				// Validation failure means we get Zod defaults (not user values)
 				expect(config.guardrails?.max_tool_calls).toBe(200); // Zod default
 			} finally {
 				fs.rmSync(projectDir, { recursive: true, force: true });
 			}
 		});
 
-		it('double-disable does not re-enable guardrails via Zod defaults', () => {
+		it('double-disable does not bypass fail-secure defaults', () => {
 			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
 			const configDir = path.join(projectDir, '.opencode');
 			fs.mkdirSync(configDir, { recursive: true });
@@ -585,8 +585,8 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 				// loadedFromFile should be true (config file exists)
 				expect(loadedFromFile).toBe(true);
 
-				// Guardrails should be disabled
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure returns guardrails.enabled: true
+				expect(config.guardrails?.enabled).toBe(true);
 
 				// Simulate the index.ts fallback logic
 				const guardrailsFallback: { enabled?: boolean; [key: string]: unknown } =
@@ -596,17 +596,17 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 							? (config.guardrails ?? {})
 							: { ...config.guardrails, enabled: false };
 
-				expect(guardrailsFallback.enabled).toBe(false);
+				expect(guardrailsFallback.enabled).toBe(true);
 
-				// Parse through Zod — should stay disabled
+				// Parse through Zod — should stay enabled
 				const parsed = GuardrailsConfigSchema.parse(guardrailsFallback);
-				expect(parsed.enabled).toBe(false);
+				expect(parsed.enabled).toBe(true);
 			} finally {
 				fs.rmSync(projectDir, { recursive: true, force: true });
 			}
 		});
 
-		it('createGuardrailsHooks returns no-ops for double-disable config', async () => {
+		it('createGuardrailsHooks enforces guardrails for fail-secure config', async () => {
 			const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
 			const configDir = path.join(projectDir, '.opencode');
 			fs.mkdirSync(configDir, { recursive: true });
@@ -622,8 +622,8 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 			try {
 				const config = loadPluginConfig(projectDir);
 
-				// Guardrails should be disabled due to validation failure
-				expect(config.guardrails?.enabled).toBe(false);
+				// Security fix (v6.7+): fail-secure - validation failure returns guardrails.enabled: true
+				expect(config.guardrails?.enabled).toBe(true);
 
 				const guardrailsConfig = GuardrailsConfigSchema.parse(
 					config.guardrails ?? {},
@@ -631,7 +631,8 @@ describe('v6.1.2 Guardrails — ADVERSARIAL SECURITY TESTS', () => {
 
 				const hooks = createGuardrailsHooks(guardrailsConfig);
 
-				// All hooks should be no-ops
+				// Hooks should NOT be no-ops - they should enforce limits
+				// Verify hooks exist and are callable
 				await expect(
 					hooks.toolBefore(
 						{ tool: 'bash', sessionID: 'test', callID: 'c1' },
