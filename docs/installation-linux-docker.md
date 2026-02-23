@@ -1,6 +1,6 @@
 # OpenCode Swarm Installation (Linux, Native Windows, and Docker Desktop)
 
-This guide covers a full install for `opencode-swarm` v6.5 on:
+This guide covers a full install for `opencode-swarm` v6.8 on:
 - Native Linux
 - Native Windows (PowerShell)
 - Windows via Docker Desktop (Linux container)
@@ -135,10 +135,11 @@ Inside OpenCode:
 /swarm config
 ```
 
-Then ask architect to use v6.5 tools:
+Then ask architect to use v6.8 tools:
 
 ```text
 @mega_architect run todo_extract and complexity_hotspots for this repo
+@mega_architect run evidence_check
 ```
 
 You should see the tool calls for:

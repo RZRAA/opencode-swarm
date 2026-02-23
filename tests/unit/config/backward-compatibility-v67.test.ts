@@ -145,7 +145,7 @@ describe('Legacy Config Compatibility', () => {
 		expect(parsed.max_iterations).toBe(5);
 	});
 
-	test('Partial automation config - missing capabilities should default to false', async () => {
+	test('Partial automation config - missing capabilities use v6.8 defaults', async () => {
 		// Partial config with only mode, no capabilities
 		const partialConfig = {
 			automation: {
@@ -157,10 +157,10 @@ describe('Legacy Config Compatibility', () => {
 		const config = loadPluginConfig(tempDir);
 
 		expect(config.automation?.mode).toBe('hybrid');
-		expect(config.automation?.capabilities?.plan_sync).toBe(false);
+		expect(config.automation?.capabilities?.plan_sync).toBe(true); // v6.8 default
 		expect(config.automation?.capabilities?.phase_preflight).toBe(false);
 		expect(config.automation?.capabilities?.config_doctor_on_startup).toBe(false);
-		expect(config.automation?.capabilities?.decision_drift_detection).toBe(false);
+		expect(config.automation?.capabilities?.decision_drift_detection).toBe(true); // v6.8 default
 	});
 
 	test('Mixed config - some capabilities true, others default to false', async () => {
@@ -191,7 +191,7 @@ describe('Legacy Config Compatibility', () => {
 		const config = loadPluginConfig(tempDir);
 
 		expect(config.automation?.mode).toBe('manual');
-		expect(config.automation?.capabilities?.plan_sync).toBe(false);
+		expect(config.automation?.capabilities?.plan_sync).toBe(true); // v6.8 default
 	});
 
 	test('Legacy config with guardrails - automation optional', async () => {
@@ -331,6 +331,7 @@ describe('Migration Behavior', () => {
 					plan_sync: false,
 					phase_preflight: false,
 					config_doctor_on_startup: false,
+					decision_drift_detection: false,
 				},
 			},
 		};
@@ -354,12 +355,16 @@ describe('Migration Behavior', () => {
 		expect(hasAnyAutomationEnabled).toBe(false);
 	});
 
-	test('Feature-gated: auto mode with all capabilities disabled - safe defaults', async () => {
+	test('Feature-gated: auto mode with all capabilities disabled - explicit false', async () => {
 		const config = {
 			automation: {
-				mode: 'auto', // Even in auto mode...
+				mode: 'auto',
 				capabilities: {
-					// ...all capabilities disabled by default
+					plan_sync: false,
+					phase_preflight: false,
+					config_doctor_on_startup: false,
+					evidence_auto_summaries: false,
+					decision_drift_detection: false,
 				},
 			},
 		};
@@ -367,7 +372,7 @@ describe('Migration Behavior', () => {
 
 		const loadedConfig = loadPluginConfig(tempDir);
 
-		// Mode is auto, but no capabilities enabled - should not trigger automation
+		// Mode is auto, but all capabilities explicitly disabled
 		expect(loadedConfig.automation?.mode).toBe('auto');
 		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(false);
 		expect(loadedConfig.automation?.capabilities?.phase_preflight).toBe(false);
@@ -562,7 +567,7 @@ describe('GUI/Background Workflow Compatibility', () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	test('Startup behavior unchanged: manual mode defaults to no automation', async () => {
+	test('Startup behavior unchanged: manual mode - phase_preflight and config_doctor off', async () => {
 		// Legacy config or explicit manual mode
 		const config = {
 			automation: {
@@ -576,24 +581,21 @@ describe('GUI/Background Workflow Compatibility', () => {
 		// In manual mode, automation should NOT start automatically
 		expect(loadedConfig.automation?.mode).toBe('manual');
 
-		// All capabilities should default to false
-		const hasAnyEnabled =
-			loadedConfig.automation?.capabilities?.plan_sync ||
-			loadedConfig.automation?.capabilities?.phase_preflight ||
-			loadedConfig.automation?.capabilities?.config_doctor_on_startup ||
-			loadedConfig.automation?.capabilities?.evidence_auto_summaries ||
-			loadedConfig.automation?.capabilities?.decision_drift_detection;
-
-		expect(hasAnyEnabled).toBe(false);
+		// Action-triggering capabilities default to false (phase_preflight, config_doctor)
+		expect(loadedConfig.automation?.capabilities?.phase_preflight).toBe(false);
+		expect(loadedConfig.automation?.capabilities?.config_doctor_on_startup).toBe(false);
+		// Read-only capabilities default to true in v6.8
+		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(true);
+		expect(loadedConfig.automation?.capabilities?.evidence_auto_summaries).toBe(true);
 	});
 
-	test('Feature-gated auto behaviors activate only when explicitly enabled', async () => {
+	test('Feature-gated auto behaviors: phase_preflight requires explicit opt-in', async () => {
 		const config = {
 			automation: {
 				mode: 'auto',
 				capabilities: {
 					plan_sync: true,
-					// Other capabilities still disabled
+					// phase_preflight not set - should stay false (triggers actions)
 				},
 			},
 		};
@@ -601,12 +603,12 @@ describe('GUI/Background Workflow Compatibility', () => {
 
 		const loadedConfig = loadPluginConfig(tempDir);
 
-		// Only plan_sync is enabled
 		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(true);
 		expect(loadedConfig.automation?.capabilities?.phase_preflight).toBe(false);
 		expect(loadedConfig.automation?.capabilities?.config_doctor_on_startup).toBe(false);
-		expect(loadedConfig.automation?.capabilities?.evidence_auto_summaries).toBe(false);
-		expect(loadedConfig.automation?.capabilities?.decision_drift_detection).toBe(false);
+		// evidence_auto_summaries and decision_drift_detection default to true in v6.8
+		expect(loadedConfig.automation?.capabilities?.evidence_auto_summaries).toBe(true);
+		expect(loadedConfig.automation?.capabilities?.decision_drift_detection).toBe(true);
 	});
 
 	test('Hybrid mode: manual triggers allowed but not automatic', async () => {
@@ -634,27 +636,9 @@ describe('GUI/Background Workflow Compatibility', () => {
 		const config = {
 			automation: {
 				mode: 'manual',
-				capabilities: {},
-			},
-		};
-		await createConfig(tempDir, config);
-
-		const loadedConfig = loadPluginConfig(tempDir);
-
-		// Status should reflect manual mode (no automation running)
-		const isAutomationEnabled = loadedConfig.automation?.mode !== 'manual' ||
-			loadedConfig.automation?.capabilities?.plan_sync === true ||
-			loadedConfig.automation?.capabilities?.phase_preflight === true;
-
-		expect(isAutomationEnabled).toBe(false);
-	});
-
-	test('Background worker does not start when all capabilities disabled', async () => {
-		const config = {
-			automation: {
-				mode: 'auto', // Even in auto mode...
 				capabilities: {
-					// ...all disabled = no background work
+					plan_sync: false,
+					phase_preflight: false,
 				},
 			},
 		};
@@ -662,7 +646,32 @@ describe('GUI/Background Workflow Compatibility', () => {
 
 		const loadedConfig = loadPluginConfig(tempDir);
 
-		// No capabilities enabled = no background automation should run
+		// Status should reflect manual mode (no action-triggering automation running)
+		const isAutomationEnabled = loadedConfig.automation?.mode !== 'manual' ||
+			loadedConfig.automation?.capabilities?.plan_sync === true ||
+			loadedConfig.automation?.capabilities?.phase_preflight === true;
+
+		expect(isAutomationEnabled).toBe(false);
+	});
+
+	test('Background worker does not start when all capabilities explicitly disabled', async () => {
+		const config = {
+			automation: {
+				mode: 'auto',
+				capabilities: {
+					plan_sync: false,
+					phase_preflight: false,
+					config_doctor_on_startup: false,
+					evidence_auto_summaries: false,
+					decision_drift_detection: false,
+				},
+			},
+		};
+		await createConfig(tempDir, config);
+
+		const loadedConfig = loadPluginConfig(tempDir);
+
+		// All capabilities explicitly disabled = no background automation should run
 		const wouldStartBackground =
 			loadedConfig.automation?.capabilities?.plan_sync ||
 			loadedConfig.automation?.capabilities?.phase_preflight ||
@@ -673,7 +682,7 @@ describe('GUI/Background Workflow Compatibility', () => {
 		expect(wouldStartBackground).toBe(false);
 	});
 
-	test('Evidence auto-summaries only activate when explicitly enabled', async () => {
+	test('Evidence auto-summaries enabled by default in v6.8', async () => {
 		const config = {
 			automation: {
 				mode: 'auto',
@@ -686,12 +695,14 @@ describe('GUI/Background Workflow Compatibility', () => {
 
 		const loadedConfig = loadPluginConfig(tempDir);
 
-		// Only evidence_auto_summaries is enabled
+		// evidence_auto_summaries is true (explicitly set, also the v6.8 default)
 		expect(loadedConfig.automation?.capabilities?.evidence_auto_summaries).toBe(true);
-		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(false);
+		// plan_sync also defaults to true in v6.8
+		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(true);
+		expect(loadedConfig.automation?.capabilities?.phase_preflight).toBe(false);
 	});
 
-	test('Decision drift detection only activates when explicitly enabled', async () => {
+	test('Decision drift detection enabled by default in v6.8', async () => {
 		const config = {
 			automation: {
 				mode: 'auto',
@@ -704,9 +715,11 @@ describe('GUI/Background Workflow Compatibility', () => {
 
 		const loadedConfig = loadPluginConfig(tempDir);
 
-		// Only decision_drift_detection is enabled
+		// decision_drift_detection is true (explicitly set, also the v6.8 default)
 		expect(loadedConfig.automation?.capabilities?.decision_drift_detection).toBe(true);
-		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(false);
+		// plan_sync also defaults to true in v6.8
+		expect(loadedConfig.automation?.capabilities?.plan_sync).toBe(true);
+		expect(loadedConfig.automation?.capabilities?.phase_preflight).toBe(false);
 	});
 });
 
@@ -1135,10 +1148,10 @@ describe('Full v6.7 Backward Compatibility Summary', () => {
 		await createConfig(tempDir, manualConfig);
 
 		const manualLoaded = loadPluginConfig(tempDir);
-		const wouldRunBackground =
-			manualLoaded.automation?.capabilities?.evidence_auto_summaries ||
-			manualLoaded.automation?.capabilities?.decision_drift_detection;
+		// In manual mode, the mode gate prevents background automation from running
+		// even if capability defaults are true (v6.8 defaults evidence/drift to true)
+		const modeAllowsBackground = manualLoaded.automation?.mode !== 'manual';
 
-		expect(wouldRunBackground).toBe(false);
+		expect(modeAllowsBackground).toBe(false);
 	});
 });

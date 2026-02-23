@@ -4,13 +4,16 @@ export { handleArchiveCommand } from './archive';
 export { handleBenchmarkCommand } from './benchmark';
 export { handleConfigCommand } from './config';
 export { handleDiagnoseCommand } from './diagnose';
+export { handleDoctorCommand } from './doctor';
 export { handleEvidenceCommand } from './evidence';
 export { handleExportCommand } from './export';
 export { handleHistoryCommand } from './history';
 export { handlePlanCommand } from './plan';
+export { handlePreflightCommand } from './preflight';
 export { handleResetCommand } from './reset';
 export { handleRetrieveCommand } from './retrieve';
 export { handleStatusCommand } from './status';
+export { handleSyncPlanCommand } from './sync-plan';
 /**
  * Creates a command.execute.before handler for /swarm commands.
  * Uses factory pattern to close over directory and agents.

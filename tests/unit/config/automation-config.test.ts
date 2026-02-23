@@ -34,6 +34,7 @@ describe('AutomationCapabilitiesSchema', () => {
 			plan_sync: true,
 			phase_preflight: true,
 			config_doctor_on_startup: true,
+			config_doctor_autofix: false,
 			evidence_auto_summaries: true,
 			decision_drift_detection: true,
 		};
@@ -41,15 +42,16 @@ describe('AutomationCapabilitiesSchema', () => {
 		expect(result).toEqual(config);
 	});
 
-	test('Defaults are applied when fields omitted (safe defaults)', () => {
+	test('Defaults are applied when fields omitted (v6.8 defaults)', () => {
 		const config = {};
 		const result = AutomationCapabilitiesSchema.parse(config);
 		expect(result).toEqual({
-			plan_sync: false,
+			plan_sync: true,
 			phase_preflight: false,
 			config_doctor_on_startup: false,
-			evidence_auto_summaries: false,
-			decision_drift_detection: false,
+			config_doctor_autofix: false,
+			evidence_auto_summaries: true,
+			decision_drift_detection: true,
 		});
 	});
 
@@ -60,8 +62,9 @@ describe('AutomationCapabilitiesSchema', () => {
 			plan_sync: true,
 			phase_preflight: false,
 			config_doctor_on_startup: false,
-			evidence_auto_summaries: false,
-			decision_drift_detection: false,
+			config_doctor_autofix: false,
+			evidence_auto_summaries: true,
+			decision_drift_detection: true,
 		});
 	});
 
@@ -112,11 +115,12 @@ describe('AutomationConfigSchema', () => {
 		expect(result).toEqual({
 			mode: 'manual',
 			capabilities: {
-				plan_sync: false,
+				plan_sync: true,
 				phase_preflight: false,
 				config_doctor_on_startup: false,
-				evidence_auto_summaries: false,
-				decision_drift_detection: false,
+				config_doctor_autofix: false,
+				evidence_auto_summaries: true,
+				decision_drift_detection: true,
 			},
 		});
 	});
@@ -132,11 +136,12 @@ describe('AutomationConfigSchema', () => {
 		const result = AutomationConfigSchema.parse(config);
 		expect(result.mode).toBe('auto');
 		expect(result.capabilities).toEqual({
-			plan_sync: false,
+			plan_sync: true,
 			phase_preflight: false,
 			config_doctor_on_startup: false,
-			evidence_auto_summaries: false,
-			decision_drift_detection: false,
+			config_doctor_autofix: false,
+			evidence_auto_summaries: true,
+			decision_drift_detection: true,
 		});
 	});
 
@@ -179,7 +184,7 @@ describe('PluginConfigSchema with automation field', () => {
 		const config = { automation: {} };
 		const result = PluginConfigSchema.parse(config);
 		expect(result.automation?.mode).toBe('manual');
-		expect(result.automation?.capabilities?.plan_sync).toBe(false);
+		expect(result.automation?.capabilities?.plan_sync).toBe(true);
 	});
 
 	test('Existing config fields still work with automation', () => {
@@ -226,7 +231,7 @@ describe('Backward compatibility', () => {
 		// Mode from project
 		expect(result.automation?.mode).toBe('auto');
 		// Capabilities from project (user's plan_sync is lost in shallow merge)
-		expect(result.automation?.capabilities?.plan_sync).toBe(false); // default
+		expect(result.automation?.capabilities?.plan_sync).toBe(true); // default (v6.8)
 		expect(result.automation?.capabilities?.phase_preflight).toBe(true);
 	});
 

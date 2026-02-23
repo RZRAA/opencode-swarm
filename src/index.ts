@@ -5,6 +5,7 @@ import {
 	type AutomationStatusArtifact,
 	type BackgroundAutomationManager,
 	createAutomationManager,
+	PlanSyncWorker,
 	type PreflightTriggerManager,
 } from './background';
 import { createSwarmCommandHandler } from './commands';
@@ -24,6 +25,7 @@ import {
 	createDelegationGateHook,
 	createDelegationTrackerHook,
 	createGuardrailsHooks,
+	createPhaseMonitorHook,
 	createPipelineTrackerHook,
 	createSystemEnhancerHook,
 	createToolSummarizerHook,
@@ -164,6 +166,58 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			automationConfig.capabilities,
 		);
 
+		// v6.8 Task 1.1: Wire evidence summary integration
+		if (automationConfig.capabilities?.evidence_auto_summaries === true) {
+			const { createEvidenceSummaryIntegration } = await import(
+				'./background/evidence-summary-integration'
+			);
+			createEvidenceSummaryIntegration({
+				automationConfig,
+				directory: ctx.directory,
+				swarmDir: ctx.directory, // NOTE: persistSummary appends .swarm/ internally
+				summaryFilename: 'evidence-summary.json',
+			});
+			log('Evidence summary integration initialized', {
+				directory: ctx.directory,
+			});
+		}
+
+		// v6.8 Task 2.2: Wire preflight integration
+		if (automationConfig.capabilities?.phase_preflight === true) {
+			const { createPreflightIntegration } = await import(
+				'./services/preflight-integration'
+			);
+			try {
+				const { manager } = createPreflightIntegration({
+					automationConfig,
+					directory: ctx.directory,
+					swarmDir,
+				});
+				preflightTriggerManager = manager;
+				log('Preflight integration initialized', { directory: ctx.directory });
+			} catch (err) {
+				log('Preflight integration failed to initialize (non-fatal)', {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		// v6.8 Task 3.2: Wire PlanSyncWorker for plan.json -> plan.md sync
+		if (automationConfig.capabilities?.plan_sync === true) {
+			try {
+				const planSyncWorker = new PlanSyncWorker({
+					directory: ctx.directory,
+					// Using defaults: debounceMs=300, pollIntervalMs=2000
+				});
+				planSyncWorker.start();
+				log('PlanSyncWorker initialized', { directory: ctx.directory });
+			} catch (err) {
+				log('PlanSyncWorker failed to initialize (non-fatal)', {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
 		log('Automation framework initialized', {
 			mode: automationConfig.mode,
 			enabled: automationManager?.isEnabled(),
@@ -288,11 +342,19 @@ const OpenCodeSwarm: Plugin = async (ctx) => {
 			// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
 		) as any,
 
-		// Inject system prompt enhancements
-		'experimental.chat.system.transform': systemEnhancerHook[
-			'experimental.chat.system.transform'
+		// Inject system prompt enhancements + phase monitor (when phase_preflight enabled)
+		'experimental.chat.system.transform': composeHandlers(
+			...([
+				systemEnhancerHook['experimental.chat.system.transform'],
+				automationConfig.capabilities?.phase_preflight === true &&
+				preflightTriggerManager
+					? createPhaseMonitorHook(ctx.directory, preflightTriggerManager)
+					: undefined,
+			].filter(Boolean) as Array<
+				(input: unknown, output: unknown) => Promise<void>
+			>),
 			// biome-ignore lint/suspicious/noExplicitAny: Plugin API requires generic hook wrappers
-		] as any,
+		) as any,
 
 		// Handle session compaction
 		'experimental.session.compacting': compactionHook[

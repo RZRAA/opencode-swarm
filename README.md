@@ -1,9 +1,9 @@
 <p align="center">
-   <img src="https://img.shields.io/badge/version-6.7.0-blue" alt="Version">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
-  <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
-  <img src="https://img.shields.io/badge/tests-1391-brightgreen" alt="Tests">
+   <img src="https://img.shields.io/badge/version-6.8.0-blue" alt="Version">
+   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+   <img src="https://img.shields.io/badge/opencode-plugin-purple" alt="OpenCode Plugin">
+   <img src="https://img.shields.io/badge/agents-9-orange" alt="Agents">
+   <img src="https://img.shields.io/badge/tests-4008-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">🐝 OpenCode Swarm</h1>
@@ -467,7 +467,7 @@ The installer auto-configures `opencode.json` to include the plugin. Manual conf
 
 ## Testing
 
-2031 tests across 78 files. Unit, integration, adversarial, and smoke. Covers config schemas, all agent prompts, all hooks, all tools, all commands, guardrail circuit breaker, race conditions, invocation window isolation, multi-invocation state, security category classification, and evidence validation.
+4008 tests across 136 files. Unit, integration, adversarial, and smoke. Covers config schemas, all agent prompts, all hooks, all tools, all commands, guardrail circuit breaker, race conditions, invocation window isolation, multi-invocation state, security category classification, evidence validation, background workers, phase-monitor hooks, and evidence-summary automation.
 
 ```bash
 bun test

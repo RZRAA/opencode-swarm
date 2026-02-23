@@ -1,4 +1,18 @@
 node_modules/
 .swarm/
 .newsroom/
+# PlanSyncWorker test temp directories
+.test-plan-sync-*/
+# Test output artifacts
+test-results.xml
+test_output.txt
+test_results.txt
+# Swarm scratch/context files
+ctx_*.txt
+# Windows null device redirect artifacts
+nul
+# Spurious test-created directories
+undefined/
+# Swarm phase spec/planning scratch files
+v6.*-*.md
 

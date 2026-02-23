@@ -4,7 +4,7 @@ Use this guide when an LLM is installing `opencode-swarm` for a user through Ope
 
 ## Goal
 
-Install, configure, and validate `opencode-swarm` v6.5 with all new tools enabled:
+Install, configure, and validate `opencode-swarm` v6.8 with all new tools enabled:
 - `todo_extract`
 - `evidence_check`
 - `pkg_audit`
@@ -123,7 +123,7 @@ Start OpenCode in the project and run:
 Success criteria:
 - swarm commands execute without plugin errors
 
-### Step A6: Verify v6.5 tools
+### Step A6: Verify v6.8 tools
 
 Ask architect:
 
@@ -131,6 +131,7 @@ Ask architect:
 @mega_architect run todo_extract and complexity_hotspots and summarize outputs
 @mega_architect run evidence_check
 @mega_architect run pkg_audit ecosystem:auto
+@mega_architect run /swarm status
 ```
 
 If API routes/spec exist, also run:
@@ -141,6 +142,7 @@ If API routes/spec exist, also run:
 
 Success criteria:
 - tool calls are recognized and return JSON output
+- Background automation is enabled by default (plan_sync: true, evidence_auto_summaries: true)
 
 ## Procedure B: Native Windows (PowerShell)
 
@@ -263,7 +265,8 @@ Return PASS only if all are true:
 - [ ] swarm config file exists and parses
 - [ ] `/swarm status` works
 - [ ] `@mega_architect` is callable
-- [ ] v6.5 tools callable (`todo_extract`, `evidence_check`, `pkg_audit`, `complexity_hotspots`, `schema_drift` when applicable)
+- [ ] v6.8 tools callable (`todo_extract`, `evidence_check`, `pkg_audit`, `complexity_hotspots`, `schema_drift` when applicable)
+- [ ] Background automation enabled by default (`plan_sync: true`, `evidence_auto_summaries: true`)
 
 ## Final Output Template (for the LLM)
 
@@ -279,7 +282,8 @@ Checks:
 - OpenCode plugin registration: PASS|FAIL
 - Swarm config presence: PASS|FAIL
 - /swarm status: PASS|FAIL
-- v6.5 tools callable: PASS|FAIL
+- v6.8 tools callable: PASS|FAIL
+- Background automation defaults: PASS|FAIL
 
 Notes:
 - <key findings>

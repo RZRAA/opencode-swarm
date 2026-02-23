@@ -461,10 +461,10 @@ export const AutomationModeSchema = z.enum(['manual', 'hybrid', 'auto']);
 export type AutomationMode = z.infer<typeof AutomationModeSchema>;
 
 // Per-capability feature flags for v6.7 automation features
-// All default to false for backward compatibility (safe defaults)
+// evidence_auto_summaries, plan_sync, decision_drift_detection default to true (v6.8); phase_preflight defaults to false (triggers actions)
 export const AutomationCapabilitiesSchema = z.object({
 	// Enable background plan synchronization with external state
-	plan_sync: z.boolean().default(false),
+	plan_sync: z.boolean().default(true),
 	// Enable phase preflight checks before agent execution
 	phase_preflight: z.boolean().default(false),
 	// Run config doctor on startup to validate/fix configuration
@@ -473,9 +473,9 @@ export const AutomationCapabilitiesSchema = z.object({
 	// SECURITY: Defaults to false - autofix requires explicit opt-in
 	config_doctor_autofix: z.boolean().default(false),
 	// Generate automatic summaries for evidence bundles
-	evidence_auto_summaries: z.boolean().default(false),
+	evidence_auto_summaries: z.boolean().default(true),
 	// Detect drift between planned and actual decisions
-	decision_drift_detection: z.boolean().default(false),
+	decision_drift_detection: z.boolean().default(true),
 });
 
 export type AutomationCapabilities = z.infer<
@@ -487,12 +487,12 @@ export type AutomationCapabilities = z.infer<
 const AutomationConfigSchemaBase = z.object({
 	mode: AutomationModeSchema.default('manual'),
 	capabilities: AutomationCapabilitiesSchema.default({
-		plan_sync: false,
+		plan_sync: true,
 		phase_preflight: false,
 		config_doctor_on_startup: false,
 		config_doctor_autofix: false,
-		evidence_auto_summaries: false,
-		decision_drift_detection: false,
+		evidence_auto_summaries: true,
+		decision_drift_detection: true,
 	}),
 });
 

@@ -326,6 +326,98 @@ Architect respects dependencies. Won't start 2.2 until 2.1 is complete.
 
 ---
 
+### 12. Automatic Execution Triggers (v6.8)
+
+**The temptation:** Require manual commands for every automation.
+
+**The reality:** Even manual-triggered automation requires thinking about when to run checks. Phase boundaries and long-running tasks create natural triggers.
+
+**Swarm's approach:** Auto-trigger automation at natural points in execution.
+
+**Phase monitor hook:**
+```typescript
+// src/hooks/phase-monitor.ts
+createPhaseMonitorHook() → Detects phase transitions → Triggers preflight
+```
+
+**Benefits:**
+- No `/swarm preflight` needed during execution
+- Consistent preflight at every phase boundary
+- Automatic blocker detection before coding starts
+- Reduces architect cognitive load
+
+**Evidence summary auto-generation:**
+```json
+{
+  "automation": {
+    "capabilities": {
+      "evidence_auto_summaries": true  // New default in v6.8
+    }
+  }
+}
+```
+
+**Benefits:**
+- Long-running tasks get automatic summaries
+- Evidence trails preserved without manual intervention
+- Context.md stays up-to-date automatically
+- Better project resumability
+
+---
+
+### 13. Persistent Background Workers (v6.8)
+
+**The temptation:** Run automation as ad-hoc scripts.
+
+**The reality:** Ad-hoc scripts fail on race conditions, lose state between runs, and don't scale.
+
+**Swarm's approach:** Background workers with file watching, debouncing, and safe shutdown.
+
+**Plan Sync Worker:**
+```typescript
+// src/background/plan-sync-worker.ts
+PlanSyncWorker {
+  fs.watch(plan.json) + 2s polling fallback
+  300ms debounce
+  Overlap lock (reader/writer pattern)
+  Graceful shutdown
+}
+```
+
+**Benefits:**
+- Auto-heals plan.json ↔ plan.md drift
+- Handles network filesystems (polling fallback)
+- Prevents race conditions (debounce + lock)
+- Survives plugin unload (graceful shutdown)
+
+**Integration:**
+```
+Plugin Init → PlanSyncWorker.register() → Background monitoring
+```
+
+**Benefits:**
+- Automatic plan regeneration on change
+- No manual refresh needed
+- Consistent plan state across sessions
+- Better human vs machine collaboration
+
+---
+
+### The Result (v6.8)
+
+When you combine automatic triggers and background workers:
+
+| v6.7 Only | v6.8 |
+|-----------|------|
+| Manual `/swarm preflight` at phase boundaries | Auto-trigger preflight at every phase change |
+| Manual `/swarm evidence summary` for long tasks | Auto-summary for long-running tasks |
+| Manual plan refresh to see latest plan.json | Background plan sync (default enabled) |
+| Architect focused on coding | Architect focused on coding + automation handles sync |
+
+**The difference:** Less manual intervention, more autonomous execution, better project maintainability.
+
+---
+
 ## The Result
 
 When you combine all these decisions:

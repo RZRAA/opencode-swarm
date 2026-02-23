@@ -268,3 +268,54 @@ export async function handleEvidenceCommand(
 	const evidenceData = await getTaskEvidenceData(directory, taskId);
 	return formatTaskEvidenceMarkdown(evidenceData);
 }
+
+/**
+ * Handle evidence summary command - generates completion ratio and blockers report.
+ */
+export async function handleEvidenceSummaryCommand(
+	directory: string,
+): Promise<string> {
+	const { buildEvidenceSummary } = await import('./evidence-summary-service');
+	const artifact = await buildEvidenceSummary(directory);
+
+	if (!artifact) {
+		return 'No plan found. Run `/swarm plan` to check plan status.';
+	}
+
+	const lines: string[] = [
+		'## Evidence Summary',
+		'',
+		`**Generated**: ${artifact.generated_at}`,
+		`**Overall Completion**: ${Math.round(artifact.overallCompletionRatio * 100)}%`,
+		'',
+	];
+
+	// Per-phase breakdown
+	for (const phase of artifact.phaseSummaries) {
+		lines.push(`### Phase ${phase.phaseId}: ${phase.phaseName}`);
+		lines.push(`- Completion: ${Math.round(phase.completionRatio * 100)}%`);
+		if (phase.blockers.length > 0) {
+			lines.push(
+				`- Blockers: ${phase.blockers.map((b) => `[${b.severity}] ${b.reason}`).join('; ')}`,
+			);
+		}
+		lines.push('');
+	}
+
+	// Overall blockers
+	if (artifact.overallBlockers.length > 0) {
+		lines.push('### Blockers');
+		for (const blocker of artifact.overallBlockers) {
+			lines.push(
+				`- [${blocker.severity}] ${blocker.reason} (Task ${blocker.taskId})`,
+			);
+		}
+		lines.push('');
+	} else {
+		lines.push('### Blockers');
+		lines.push('None — all completed tasks have required evidence.');
+		lines.push('');
+	}
+
+	return lines.join('\n');
+}

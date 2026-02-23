@@ -59,3 +59,7 @@ export declare function formatTaskEvidenceMarkdown(evidence: TaskEvidenceData): 
  * Kept for backward compatibility - thin adapter.
  */
 export declare function handleEvidenceCommand(directory: string, args: string[]): Promise<string>;
+/**
+ * Handle evidence summary command - generates completion ratio and blockers report.
+ */
+export declare function handleEvidenceSummaryCommand(directory: string): Promise<string>;

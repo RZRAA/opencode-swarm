@@ -36,6 +36,12 @@ export {
 	BackgroundAutomationManager,
 	createAutomationManager,
 } from './manager';
+// v6.7 Task 3.4: Plan sync worker for plan.json -> plan.md sync
+export {
+	PlanSyncWorker,
+	type PlanSyncWorkerOptions,
+	type PlanSyncWorkerStatus,
+} from './plan-sync-worker';
 export {
 	AutomationQueue,
 	type QueueItem,

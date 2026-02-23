@@ -1,1 +1,1 @@
-export { handleEvidenceCommand } from '../services/evidence-service';
+export { handleEvidenceCommand, handleEvidenceSummaryCommand, } from '../services/evidence-service';

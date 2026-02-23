@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.8.0] - 2026-02-22
+
+### Added
+- **`EvidenceSummaryIntegration` enhanced** — Wired into plugin init (`src/index.ts`) with `evidence_auto_summaries: true` default. Auto-generates evidence summaries for long-running tasks automatically.
+- **`/swarm evidence summary` slash command** — New command (`src/commands/evidence.ts`, `src/services/evidence-service.ts`) to manually trigger evidence summary generation.
+- **`phase_monitor.ts` hook** — `createPhaseMonitorHook()` detects phase transitions and automatically triggers preflight. Exported from `src/hooks/index.ts`.
+- **`createPreflightIntegration()` wired** — Integrated into plugin hook chain in `src/index.ts` to enable phase-boundary preflight automation.
+- **`PlanSyncWorker` background worker** — `PlanSyncWorker` class in `src/background/plan-sync-worker.ts` with `fs.watch` + 2s polling fallback, 300ms debounce, overlap lock, safe shutdown. Auto-regenerates plan.md from plan.json when out of sync.
+- **`plan_sync` default changed to `true`** — `src/config/schema.ts` now defaults to `plan_sync: true` for automatic plan synchronization.
+- **Rollback/disable safeguards** — Timeout isolation for background workers, callback safety for event handlers, graceful shutdown on plugin unload.
+
+### Tests
+- 808 new tests: evidence-summary automation, evidence-summary-init integration and adversarial, phase-preflight-auto, plan-sync-worker unit, adversarial, integration and init.
+- Total: 4008 tests across 136 files, all passing.
+
+## [6.7.0] - 2026-02-22
+
+### Added
+- **Background automation framework** — `src/background/` directory with event bus, circuit breaker, automation queue, worker registry, background manager, status artifact writer. Enables autonomous background operations without GUI interaction.
+- **`AutomationConfig` Zod schema** — Configuration schema with `mode` (manual/hybrid/auto) and capability flags: `plan_sync`, `phase_preflight`, `config_doctor_on_startup`, `config_doctor_autofix`, `evidence_auto_summaries`, `decision_drift_detection`.
+- **`EvidenceSummaryIntegration`** — Auto-generates evidence summaries when `evidence_auto_summaries: true`. Hooks into plugin init and slash command execution.
+- **`PreflightTriggerManager`** — Detects phase transitions and auto-triggers preflight checks. Wires into phase-monitor hook in the execution pipeline.
+- **`createPreflightIntegration()`** — Integration factory that sets up the preflight automation pipeline.
+- **`ConfigDoctorService`** — Validates plugin configuration on startup, reports issues, and optionally autofixes safe problems.
+- **`DecisionDriftAnalyzer`** — Analyzes architect decisions in plan.json and warns about contradictions or drift from previous decisions.
+- **`/swarm preflight`** — Manual preflight health check slash command.
+- **`/swarm diagnose`** — Plugin diagnostic slash command with configuration validation, evidence completeness check, and health status.
+- **`/swarm export`** — Export plan.md and context.md as portable JSON with version and timestamp.
+- **`/swarm history`** — View completed phases from plan.md with status icons and task counts.
+- **`/swarm sync-plan`** — Sync plan.json to plan.md when out of sync (manual or background).
+- **Architecture shift to GUI-first, background-first** — Business logic in services; slash commands are thin adapters for control surfaces.
+- **Conservative security defaults** — `phase_preflight: false`, `config_doctor_autofix: false` (explicit opt-in required for action-triggering automation).
+
+### Tests
+- 73 new tests: evidence-summary integration, phase-preflight automation, background workers, preflight integration, config doctor, decision drift analyzer, slash commands.
+- Total: 2200 tests across 90 files, all passing.
+
+## [6.6.1] - 2026-02-22
+
+### Changed
+- **Native Windows install documentation** — Added comprehensive installation guide for Windows PowerShell, covering path handling, path traversal fixes, and verification steps specific to the Windows filesystem.
+- **Linux/Docker install runbook** — Expanded installation guide for Linux environments with Docker Desktop setup, including volume mounting, container configuration, and troubleshooting for shared folders.
+- **LLM-hosted install runbook** — Created agent-executable installation guide for LLM operators, including step-by-step procedures, verification checkpoints, and hand-off templates for structured validation reports.
+
+### Tests
+- No new tests added.
+- Total: 2127 tests across 86 files, all passing.
+
+## [6.5.0] - 2026-02-22
+
+### Added
+- **`todo_extract` tool** — Scan the codebase for TODO/FIXME/HACK/XXX/WARN/NOTE comments. Returns structured data with file paths, line numbers, comment types, and confidence scores. Security: path traversal prevention, Bun.spawn array args, Promise.race timeouts, Zod validation.
+- **`evidence_check` tool** — Verify completed tasks in the plan have required evidence types. Compares plan.md task completion against `.swarm/evidence/` directory to identify gaps. Security: path traversal prevention, Zod validation.
+- **`pkg_audit` tool** — Run package manager security audit (npm, pip, cargo) and return structured CVE data. Returns package vulnerabilities, severity ratings, and remediation suggestions. Security: bounded output, error handling without throwing.
+- **`complexity_hotspots` tool** — Identify high-risk code hotspots by combining git churn frequency with cyclomatic complexity estimates. Returns files with churn count, complexity score, risk score, and recommended review level. Security: git security (proper refs), path traversal prevention.
+- **`schema_drift` tool** — Compare OpenAPI spec against actual route implementations to find drift. Detects undocumented routes in code and phantom routes in spec. Security: path traversal prevention, spec validation.
+
+### Tests
+- 69 new tests: todo_extract (27), evidence_check (12), pkg_audit (18), complexity_hotspots (10), schema_drift (2).
+- Total: 2127 tests across 86 files, all passing.
+
+## [6.4.0] - 2026-02-22
+
+### Added
+- **`checkpoint` tool** — Git-backed save points for multi-file refactor safety. Exports: `checkpoint(label: string): Promise<void>`, `restore(id: string): Promise<void>`, `list(): Promise<CheckpointInfo[]>`, `delete(id: string): Promise<void>`. Before any multi-file refactor (≥3 files), architect automatically creates a checkpoint commit. On critical integration failure, restores via soft reset instead of iterating into a hole.
+- **`symbols` tool** — Export inventory for a module: functions, classes, interfaces, types, enums. Exports: `extractSymbols(filePath: string, exportedOnly?: boolean): ExportedSymbol[]`. Uses AST parsing with TypeScript compiler API. Gives the Architect instant visibility into a file's public API surface without reading the full source.
+- **`CheckpointConfigSchema`** — Optional `checkpoint: { enabled: boolean, max_age_days: number, auto_create_threshold: number }` in plugin config. Defaults to `{ enabled: true, max_age_days: 30, auto_create_threshold: 3 }`.
+- **Architect context window expanded** — Context budget limit increased from 800 to 1,200 tokens to support larger refactor planning and multi-module architectural reasoning.
+
+### Tests
+- 27 new tests: checkpoint tool (34 tests, including adversarial and rollback scenarios).
+- Total: 2058 tests across 81 files, all passing.
+
 ## [6.3.0] - 2026-02-19
 
 ### Added

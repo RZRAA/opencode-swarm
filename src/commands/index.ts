@@ -7,7 +7,10 @@ import { handleBenchmarkCommand } from './benchmark';
 import { handleConfigCommand } from './config';
 import { handleDiagnoseCommand } from './diagnose';
 import { handleDoctorCommand } from './doctor';
-import { handleEvidenceCommand } from './evidence';
+import {
+	handleEvidenceCommand,
+	handleEvidenceSummaryCommand,
+} from './evidence';
 import { handleExportCommand } from './export';
 import { handleHistoryCommand } from './history';
 import { handlePlanCommand } from './plan';
@@ -44,6 +47,7 @@ const HELP_TEXT = [
 	'- `/swarm config` — Show current resolved configuration',
 	'- `/swarm config doctor` — Run config doctor checks',
 	'- `/swarm evidence [taskId]` — Show evidence bundles',
+	'- `/swarm evidence summary` — Generate evidence summary with completion ratio and blockers',
 	'- `/swarm archive [--dry-run]` — Archive old evidence bundles',
 	'- `/swarm diagnose` — Run health check on swarm state',
 	'- `/swarm preflight` — Run preflight automation checks',
@@ -112,7 +116,11 @@ export function createSwarmCommandHandler(
 				text = await handleDoctorCommand(directory, args);
 				break;
 			case 'evidence':
-				text = await handleEvidenceCommand(directory, args);
+				if (args[0] === 'summary') {
+					text = await handleEvidenceSummaryCommand(directory);
+				} else {
+					text = await handleEvidenceCommand(directory, args);
+				}
 				break;
 			case 'diagnose':
 				text = await handleDiagnoseCommand(directory, args);

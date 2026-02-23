@@ -658,7 +658,7 @@ When contract changes are detected, the explorer analyzes:
 
 ---
 
-## Automation Configuration (v6.7)
+## Automation Configuration (v6.8)
 
 Control background-first automation and feature flags:
 
@@ -667,25 +667,21 @@ Control background-first automation and feature flags:
   "automation": {
     "mode": "manual",
     "capabilities": {
-      "plan_sync": false,
+      "plan_sync": true,
       "phase_preflight": false,
       "config_doctor_on_startup": false,
       "config_doctor_autofix": false,
-      "evidence_auto_summaries": false,
+      "evidence_auto_summaries": true,
       "decision_drift_detection": false
     }
   }
 }
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
 | `mode` | string | `"manual"` | Automation mode: `"manual"` (no background automation), `"hybrid"` (safe ops only), `"auto"` (full automation). **Default: `manual`** for backward compatibility. |
-| `plan_sync` | boolean | `false` | Enable automatic plan synchronization. When enabled, Swarm regenerates plan.md from canonical plan.json when they're out of sync. Safe - read-only operation. |
+| `plan_sync` | boolean | `true` | Enable automatic plan synchronization. When enabled, Swarm regenerates plan.md from canonical plan.json when they're out of sync. Safe - read-only operation. **Default changed to `true` in v6.8**. |
 | `phase_preflight` | boolean | `false` | Enable phase-boundary preflight checks before agent execution. Validates plan completeness, evidence requirements, and blockers. Returns actionable findings. |
-| `config_doctor_on_startup` | boolean | `false` | Run Config Doctor on plugin initialization to validate and fix configuration. Defaults to scan-only mode. Requires explicit opt-in via `config_doctor_autofix`. |
-| `config_doctor_autofix` | boolean | `false` | Enable auto-fix mode for Config Doctor. **Security: Defaults to false** - autofix requires explicit opt-in. Creates backups in `.swarm/` before applying fixes. |
-| `evidence_auto_summaries` | boolean | `false` | Generate automatic evidence summaries. Aggregates evidence per task and phase, producing machine-readable JSON and human-readable markdown. |
+| `evidence_auto_summaries` | boolean | `true` | Generate automatic evidence summaries for long-running tasks. Aggregates evidence per task and phase, producing machine-readable JSON and human-readable markdown. **Default changed to `true` in v6.8**. |
 | `decision_drift_detection` | boolean | `false` | Detect drift between planned and actual decisions. Caches decisions from `## Decisions` section in context.md, identifies stale decisions and contradictions. |
 
 ### How Automation Modes Work

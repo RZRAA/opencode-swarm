@@ -15,6 +15,7 @@ export { CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerState, Lo
 export { type AutomationEvent, AutomationEventBus, type AutomationEventType, } from './event-bus';
 export { createEvidenceSummaryIntegration, type EvidenceSummaryIntegrationConfig, type EvidenceSummaryTriggerEvent, type EvidenceSummaryTriggerPayload, } from './evidence-summary-integration';
 export { type AutomationFrameworkConfig, BackgroundAutomationManager, createAutomationManager, } from './manager';
+export { PlanSyncWorker, type PlanSyncWorkerOptions, type PlanSyncWorkerStatus, } from './plan-sync-worker';
 export { AutomationQueue, type QueueItem, type QueuePriority, type RetryMetadata, } from './queue';
 export { AutomationStatusArtifact, type AutomationStatusSnapshot, } from './status-artifact';
 export { type PhaseBoundaryResult, PhaseBoundaryTrigger, type PreflightHandler, type PreflightRequest, type PreflightRequestPayload, type PreflightTriggerConfig, type PreflightTriggerEventType, PreflightTriggerManager, } from './trigger';

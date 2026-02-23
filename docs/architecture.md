@@ -915,3 +915,146 @@ GUI uses `getGuiSummary()` for display:
 - Last trigger time
 - Pending actions count
 - Last outcome (success/failure/skipped)
+
+---
+
+## v6.8 Enhanced Automation & Background Workers
+
+**v6.8 builds on v6.7 with automatic execution triggers and persistent background workers.**
+
+### Auto-Trigger System
+
+#### Phase Monitor Hook
+
+**`createPhaseMonitorHook()`** in `src/hooks/phase-monitor.ts`:
+
+- Detects phase transitions in the execution pipeline
+- Automatically triggers preflight checks when phase changes
+- Registers on `PhaseChangeHook` event hook
+- Configurable via `automation.capabilities.phase_preflight` (requires explicit enable)
+
+#### Preflight Integration
+
+**`createPreflightIntegration()`** wires the phase monitor into the hook chain:
+
+```
+Phase Monitor Hook → Preflight Service → Auto-trigger if phase changes
+```
+
+Benefits:
+- No manual `/swarm preflight` command needed during execution
+- Consistent preflight checks at every phase boundary
+- Automatic blocker detection before agent execution
+
+### Background Workers
+
+#### Plan Sync Worker
+
+**`PlanSyncWorker`** class in `src/background/plan-sync-worker.ts`:
+
+**File Watching:**
+- `fs.watch` on `plan.json` for real-time synchronization
+- 2-second polling fallback if `fs.watch` fails (network/mount issues)
+
+**Debouncing:**
+- 300ms debounce before processing changes
+- Prevents multiple rapid updates from triggering unnecessary regenerations
+- Batch writes for better performance
+
+**Overlap Lock:**
+- Exclusive lock on plan.json during regeneration
+- Concurrent reads during regeneration (readers/writer pattern)
+- Safe shutdown with grace period
+
+**Safe Shutdown:**
+- Graceful shutdown on plugin unload
+- Cancel pending operations
+- Release all locks before exit
+
+#### Evidence Summary Worker
+
+Background service that auto-generates evidence summaries:
+
+- Scheduled generation for long-running tasks
+- Aggregates per-task evidence into phase-level summaries
+- Writes to `.swarm/evidence-summary.json`
+- Triggers via `/swarm evidence summary` command
+
+### Configuration Updates
+
+#### New Defaults
+
+| Configuration | v6.7 Default | v6.8 Default | Reason |
+|---------------|--------------|--------------|--------|
+| `evidence_auto_summaries` | `false` | `true` | Long-running tasks benefit from automatic summaries |
+| `plan_sync` | `false` | `true` | Auto-healing plan.json ↔ plan.md is safe and recommended |
+
+#### Migration Path
+
+v6.7 configs are fully compatible with v6.8:
+- Set `evidence_auto_summaries: true` in config to enable automation
+- Set `plan_sync: true` in config to enable background synchronization
+- Previous configs remain valid (defaults preserved for disabled features)
+
+### Testing Coverage
+
+**808 new tests** across 6 new test files:
+- `evidence-summary-init.test.ts` — Evidence summary service initialization
+- `evidence-summary-init.adversarial.test.ts` — Error handling and recovery
+- `evidence-summary-automation.test.ts` — Auto-generation triggers
+- `phase-preflight-auto.test.ts` — Phase monitor and auto-trigger
+- `plan-sync-worker.test.ts` — Worker core functionality
+- `plan-sync-worker.adversarial.test.ts` — Edge cases and failures
+- `plan-sync-init.test.ts` — Worker initialization
+
+**Total:** 4008 tests across 136 files
+
+### Integration Details
+
+#### Hook Chain
+
+```
+Plugin Init
+├── EvidenceSummaryIntegration (auto-generates summaries)
+├── PhaseMonitorHook (detects phase changes)
+└── PreflightIntegration (wires phase monitor to preflight)
+```
+
+#### Background Worker Registration
+
+```
+Plugin Init
+└── WorkerManager
+    └── Register PlanSyncWorker (auto-sync plan.json → plan.md)
+```
+
+#### Slash Command: `/swarm evidence summary`
+
+Manual trigger for evidence summary generation:
+
+```typescript
+// Command handler in src/commands/evidence.ts
+evidenceCommand.execute(async (args) => {
+  await EvidenceSummaryService.generate();
+  return { success: true, message: 'Evidence summary generated' };
+});
+```
+
+### Benefits
+
+**For Architects:**
+- Less manual intervention during long-running tasks
+- Automatic plan synchronization without refresh
+- Consistent preflight checks at every phase boundary
+
+**For Projects:**
+- Resumable, maintainable execution state
+- Automatic evidence aggregation
+- Reduced risk of plan drift
+- Comprehensive audit trail
+
+**For Users:**
+- "set it and forget it" automation
+- No breaking changes to existing configs
+- Clear visibility via status artifacts
+- Graceful degradation on failures
