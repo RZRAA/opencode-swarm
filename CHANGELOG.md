@@ -1,5 +1,63 @@
 # Changelog
 
+## v6.10.0 - Parallel Pre-Check Batch (2026-02-26)
+
+### New Features
+
+#### pre_check_batch - Parallel Verification Tooling
+
+**4x faster QA gates** by running independent checks in parallel:
+
+- **lint:check** - Code quality verification (hard gate)
+- **secretscan** - Secret detection (hard gate)  
+- **sast_scan** - Static security analysis with 63+ rules (hard gate)
+- **quality_budget** - Maintainability threshold enforcement
+
+**Benefits**:
+- Reduces total gate time from ~60s (sequential) to ~15s (parallel)
+- All tools run via `p-limit` with max 4 concurrent operations
+- Individual tool timeouts (60s) prevent cascading failures
+- Unified `gates_passed` boolean for simplified gate logic
+
+### New Configuration
+
+```json
+{
+  "pipeline": {
+    "parallel_precheck": true  // default: true
+  }
+}
+```
+
+Set to `false` to run gates sequentially (useful for debugging or resource constraints).
+
+### Updated Phase 5 QA Gate Sequence
+
+```
+coder → diff → syntax_check → placeholder_scan → imports → 
+lint fix → build_check → pre_check_batch (parallel) → 
+reviewer → security reviewer → test_engineer → coverage check
+```
+
+### System Hints
+
+Architect receives hints about parallel vs sequential mode via system enhancer hook. Phase 5 prompt updated to use `pre_check_batch` after `build_check`.
+
+### Dependencies
+
+- Added `p-limit@7.3.0` for concurrency control
+
+### Upgrade Guide
+
+**No breaking changes.**
+
+1. Update to v6.10.0
+2. Parallel pre-check enabled by default
+3. Set `pipeline.parallel_precheck: false` to disable if needed
+4. Run `bun test` to verify installation
+
+---
+
 ## v6.9.0 - Quality & Anti-Slop Tooling (2026-02-25)
 
 ### New Features
