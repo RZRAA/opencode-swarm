@@ -1,5 +1,117 @@
 # Changelog
 
+## v6.11.0 - Architect Prompt Hardening (2026-02-26)
+
+### Workflow Hardening
+
+#### MODE Labels — Clear Architect Workflow Phases
+Renamed internal workflow headers from "Phase N" to explicit MODE labels:
+- `MODE: RESUME` — Resume detection
+- `MODE: CLARIFY` — Requirement clarification
+- `MODE: DISCOVER` — Codebase exploration
+- `MODE: CONSULT` — SME consultation
+- `MODE: PLAN` — Plan creation
+- `MODE: CRITIC-GATE` — Plan review checkpoint
+- `MODE: EXECUTE` — Task implementation
+- `MODE: PHASE-WRAP` — Phase completion
+
+**NAMESPACE RULE**: MODE labels refer to architect's internal workflow. Project plan phases remain "Phase N" in plan.md.
+
+#### ⛔ HARD STOP — Pre-Commit Checklist
+Mandatory 4-item checklist before marking any task complete:
+- [ ] All QA gates passed (lint:check, secretscan, sast_scan)
+- [ ] Reviewer approval documented
+- [ ] Tests pass with evidence
+- [ ] No security findings
+
+There is no override. A commit without a completed QA gate is a workflow violation.
+
+#### Observable Output — Required Print Statements
+All blocking steps (5c-5m) now require explicit output:
+```
+→ REQUIRED: Print {description} on all blocking steps
+```
+Ensures visibility into gate progress and failure points.
+
+### Task Quality Enforcement
+
+#### Task Granularity Rules
+Tasks classified as SMALL/MEDIUM/LARGE with decomposition requirements:
+- **SMALL**: 1 file, single verb, <2 hours
+- **MEDIUM**: 1-2 files, compound action, <4 hours
+- **LARGE**: Must decompose into smaller tasks
+
+#### Task Atomicity Checks
+Critic validates tasks are not oversized:
+- Max 2 files per task (otherwise decompose)
+- No compound verbs ("and", "plus", "with") in task descriptions
+- Clear acceptance criteria required
+
+#### TASK COMPLETION CHECKLIST
+Emit before marking task complete:
+- Evidence written to `.swarm/evidence/{taskId}/`
+- plan.md updated with `[x] task complete`
+- Completion confirmation printed
+
+### Failure Handling
+
+#### FAILURE COUNTING
+Retry counter with escalation after 5 failures:
+```
+RETRY #{count}/5
+```
+
+#### RETRY PROTOCOL
+Structured rejection format on gate failure:
+```
+RETRY #{count}/5
+FAILED GATE: {gate_name}
+REASON: {specific failure}
+REQUIRED FIX: {actionable instruction}
+RESUME AT: {step_5x}
+```
+
+### Anti-Rationalization
+
+#### ANTI-EXEMPTION RULES (8 patterns blocked)
+The following rationalizations are explicitly blocked:
+1. "It's a simple change"
+2. "Just updating docs"
+3. "Only a config tweak"
+4. "Hotfix, no time for QA"
+5. "The tests pass locally"
+6. "I'll clean it up later"
+7. "No logic changes"
+8. "Already reviewed the pattern"
+
+There are NO simple changes. There are NO exceptions to the QA gate sequence.
+
+### Security
+
+#### AUTHOR BLINDNESS WARNING
+Added to coder prompt: warns against self-review bias and requires treating own code with same scrutiny as others'.
+
+### Updated Phase 5 QA Gate Sequence
+
+```
+coder → diff → syntax_check → placeholder_scan → imports → 
+lint fix → build_check → pre_check_batch (4 parallel: lint:check, secretscan, sast_scan, quality_budget) → 
+reviewer → security review → verification tests → adversarial tests → coverage check → complete
+```
+
+**Note**: `secretscan` and `sast_scan` now run inside `pre_check_batch`, not as standalone steps.
+
+### Files Changed
+- `src/agents/architect.ts` — MODE labels, HARD STOP, observable output, anti-exemption rules
+- `src/agents/critic.ts` — Task granularity checks, atomicity validation
+- `src/agents/coder.ts` — Author blindness warning
+- `tests/unit/agents/architect-gates.test.ts` — Gate sequence tests
+- `tests/unit/agents/architect-v6-prompt.test.ts` — Prompt structure validation
+- `tests/unit/agents/architect-workflow-security.test.ts` — Security gate tests
+- `tests/unit/agents/architect-adversarial.test.ts` — Anti-rationalization tests
+
+---
+
 ## v6.10.0 - Parallel Pre-Check Batch (2026-02-26)
 
 ### New Features
